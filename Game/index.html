@@ -1,0 +1,211 @@
+﻿<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RPG Sonsuz Av</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="auth-screen" id="authScreen">
+      <form class="auth-panel" id="authForm">
+        <p>RPG Sonsuz Av</p>
+        <h1>Karakterine Giriş Yap</h1>
+        <label>
+          Kullanıcı adı
+          <input id="usernameInput" name="username" autocomplete="username" required minlength="3" maxlength="24" />
+        </label>
+        <label>
+          Şifre
+          <input id="passwordInput" name="password" type="password" autocomplete="current-password" required minlength="4" />
+        </label>
+        <div class="auth-actions">
+          <button type="submit" data-auth-action="login">Giriş</button>
+          <button type="submit" data-auth-action="register">Kayıt Ol</button>
+        </div>
+        <span id="authMessage"></span>
+      </form>
+    </section>
+
+    <main class="game-shell">
+      <header class="hud-header">
+        <div>
+          <p>RPG Sonsuz Av</p>
+          <h1>Fırtınanın İçinde</h1>
+        </div>
+        <div class="header-actions">
+          <div class="save-box">
+            <span id="saveStatus">Giriş bekleniyor</span>
+            <strong id="currentUserText">Misafir</strong>
+            <button type="button" id="logoutButton">Çıkış</button>
+            <button type="button" id="resetButton">Sıfırla</button>
+          </div>
+          <div class="xp-box">
+            <span>XP</span>
+            <strong id="xpText">0 / 100</strong>
+            <div class="bar xp"><i id="xpBar"></i></div>
+          </div>
+          <div class="gold-box">
+            <span>Altın</span>
+            <strong id="goldText">0</strong>
+          </div>
+        </div>
+      </header>
+
+      <aside class="side-panel left-panel">
+        <section class="panel stats-panel">
+          <div class="panel-title">
+            <h2>Karakter</h2>
+            <span id="pointsText">0 puan</span>
+          </div>
+          <div class="stats-grid" id="statsGrid"></div>
+        </section>
+
+        <section class="panel enemy-list-panel">
+          <div class="panel-title">
+            <h2>Düşmanlar</h2>
+            <span>Test</span>
+          </div>
+          <div class="enemy-list" id="enemyList"></div>
+        </section>
+      </aside>
+
+      <section class="stage" aria-label="Savaş alanı">
+        <video class="storm-video" src="assets/video/storm-clouds.mp4" autoplay muted loop playsinline></video>
+        <div class="layer layer-0"></div>
+        <div class="layer layer-1"></div>
+        <div class="layer layer-2"></div>
+        <div class="layer layer-3"></div>
+        <div class="layer layer-lights-a"></div>
+        <div class="layer layer-4"></div>
+        <div class="layer layer-5"></div>
+        <div class="layer layer-lights-b"></div>
+        <div class="layer layer-6"></div>
+        <div class="layer layer-7"></div>
+        <div class="layer layer-8"></div>
+        <div class="layer layer-9"></div>
+
+        <div class="level-roadmap" aria-label="Level yolu">
+          <div class="roadmap-head">
+            <strong id="roadmapRange">1 - 50</strong>
+            <span id="roadmapStatus">Level 1</span>
+          </div>
+          <div class="roadmap-grid" id="roadmapGrid"></div>
+        </div>
+
+        <div class="combatants">
+          <div class="hero-wrap" id="heroWrap">
+            <div class="entity-health hero-health">
+              <span id="healthText">120 / 120</span>
+              <div class="entity-bar"><i id="healthBar"></i></div>
+            </div>
+            <div class="hero-sprite" aria-label="Okçu kahraman"></div>
+            <div class="nameplate">
+              <strong id="heroName">Fırtına Okçusu</strong>
+              <span id="heroLevel">Seviye 1</span>
+            </div>
+          </div>
+
+          <div class="projectile-lane" id="projectileLane"></div>
+
+          <div class="enemy-wrap">
+            <div class="entity-health enemy-health">
+              <span id="enemyHealthText">55 / 55</span>
+              <div class="entity-bar danger"><i id="enemyHealthBar"></i></div>
+            </div>
+            <div class="enemy" id="enemyAvatar">
+              <span id="enemyInitial"></span>
+            </div>
+            <div class="nameplate enemy-plate">
+              <strong id="enemyName">Goblin</strong>
+              <span id="enemyLevel">Tehdit 1</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="death-overlay" id="deathOverlay" hidden>
+          <strong>Yenildin</strong>
+          <span id="deathCountdown">3</span>
+        </div>
+      </section>
+
+      <aside class="side-panel right-panel">
+        <nav class="panel-nav" aria-label="Oyun panelleri">
+          <button type="button" data-panel-tab="status">Durum</button>
+          <button type="button" class="active" data-panel-tab="shop">Dükkan</button>
+          <button type="button" data-panel-tab="craft">Birleştir</button>
+          <button type="button" data-panel-tab="equipment">Ekipman</button>
+        </nav>
+
+        <section class="panel right-tab-panel" data-panel-view="status">
+          <div class="panel-title">
+            <h2>Karakter Durumu</h2>
+            <span id="statusHint">Özet</span>
+          </div>
+          <div class="status-card">
+            <div class="status-hero" aria-hidden="true"></div>
+            <div class="status-grid" id="statusGrid"></div>
+          </div>
+        </section>
+
+        <section class="panel right-tab-panel active" data-panel-view="shop">
+          <div class="panel-title">
+            <h2>Dükkan</h2>
+            <span id="shopHint">Ekipman al</span>
+          </div>
+          <div class="shopkeeper-card" aria-label="Dükkan görevlisi">
+            <div class="shopkeeper-stage">
+              <div class="shopkeeper-sprite" aria-hidden="true">
+                <i class="npc-layer npc-skin"></i>
+                <i class="npc-layer npc-hair"></i>
+                <i class="npc-layer npc-corset"></i>
+                <i class="npc-layer npc-skirt"></i>
+                <i class="npc-layer npc-socks"></i>
+              </div>
+            </div>
+            <div>
+              <strong>Tezgâhtar</strong>
+              <span>Yeni ekipmanlara bakıyor</span>
+            </div>
+          </div>
+          <div class="shop-list" id="shopList"></div>
+        </section>
+
+        <section class="panel right-tab-panel" data-panel-view="equipment">
+          <div class="panel-title">
+            <h2>Ekipman</h2>
+            <span>Item sürükle</span>
+          </div>
+          <div class="equipment-grid" id="equipmentGrid">
+            <div class="equip-slot" data-slot="weapon"><span>Silah</span><strong>Boş</strong></div>
+            <div class="equip-slot" data-slot="armor"><span>Zırh</span><strong>Boş</strong></div>
+            <div class="equip-slot" data-slot="helmet"><span>Başlık</span><strong>Boş</strong></div>
+            <div class="equip-slot" data-slot="gloves"><span>Eldiven</span><strong>Boş</strong></div>
+            <div class="equip-slot" data-slot="ring"><span>Yüzük</span><strong>Boş</strong></div>
+          </div>
+        </section>
+
+        <section class="panel crafting-panel right-tab-panel" data-panel-view="craft">
+          <div class="panel-title">
+            <h2>Birleştir</h2>
+            <span id="craftHint">0 / 3 parça</span>
+          </div>
+          <div class="crafting-list" id="craftingList"></div>
+          <button type="button" class="craft-button" id="craftButton">Yeni Item Oluştur</button>
+        </section>
+
+        <section class="panel inventory-panel">
+          <div class="panel-title">
+            <h2>Envanter</h2>
+            <span id="inventoryCount">0 item</span>
+          </div>
+          <div class="inventory-list" id="inventoryList"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="src/game.js"></script>
+  </body>
+</html>
+
+
