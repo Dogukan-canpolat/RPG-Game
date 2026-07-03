@@ -1,11 +1,18 @@
 
 # RPG Sonsuz Av
-<img width="320" height="340" alt="gifgit (1)" src="https://github.com/user-attachments/assets/3ba4e4ab-2f66-4824-a800-faf98361c0cd" /> <img width="320" height="350" alt="gifgit" src="https://github.com/user-attachments/assets/67aaf65b-ed5b-4695-b567-f829fa56bbca" />
+<img width="320" height="340" alt="gifgit (1)" src="https://github.com/user-attachments/assets/3ba4e4ab-2f66-4824-a800-faf98361c0cd" />
+
+
+
 `RPG Sonsuz Av`, tarayıcıda çalışan 2D idle/action RPG prototipidir. Oyun vanilla HTML, CSS ve JavaScript ile yazılmıştır. Kayıtlar tarayıcı local storage içinde değil, proje klasöründeki yerel JSON veritabanında tutulur.
 
 ## Oyunun Amacı
 
 Oyuncu bir okçu karakterle düşmanlara karşı otomatik savaşır. Düşmanlar uzaktan yaklaşır, karakterin yanına gelince saldırmaya başlar. Oyuncu XP, altın, ekipman, iksir ve üretim parçaları toplayarak daha yüksek savaş levellerine ilerler.
+
+
+<img width="1096" height="776" alt="gamegiff2 (online-video-cutter com)" src="https://github.com/user-attachments/assets/3401a362-714a-4999-9191-9bcc7066d7b4" />
+
 
 Ana döngü:
 
@@ -248,6 +255,7 @@ Geliştirilebilir özellikler:
 Her satın alma sonrası aynı geliştirmenin maliyeti artar.
 
 ## Arayüz
+<img width="320" height="350" alt="gifgit" src="https://github.com/user-attachments/assets/67aaf65b-ed5b-4695-b567-f829fa56bbca" />
 
 Header içinde:
 
