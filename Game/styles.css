@@ -26,11 +26,16 @@ body {
     sans-serif;
 }
 
+html {
+  background: #090a0d;
+}
+
 button {
   border: 0;
   color: inherit;
   font: inherit;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 input {
@@ -395,7 +400,7 @@ input:focus {
 }
 
 @keyframes enemy-attack {
-  45% { transform: translate(var(--enemy-lunge-x), var(--enemy-ground-y)) scaleX(var(--enemy-facing)) scale(1.04); filter: brightness(1.3); }
+  45% { transform: translate(var(--enemy-lunge-x), var(--enemy-ground-y)) scaleX(var(--enemy-facing)) scale(var(--enemy-attack-scale, 1.04)); filter: brightness(1.3); }
 }
 
 .nameplate {
@@ -1077,6 +1082,29 @@ input:focus {
   height: 38px;
 }
 
+.item-quantity {
+  position: absolute;
+  top: 0.42rem;
+  left: 0.42rem;
+  z-index: 2;
+  min-width: 24px;
+  padding: 0.12rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--tier-color, #ffffff) 70%, rgba(255, 255, 255, 0.28));
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    rgba(8, 13, 19, 0.88);
+  box-shadow:
+    0 0 10px color-mix(in srgb, var(--tier-color, transparent) 42%, transparent),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: #f8fbff;
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  letter-spacing: 0;
+}
+
 .item > div {
   min-width: 0;
   width: 100%;
@@ -1179,6 +1207,14 @@ input:focus {
   cursor: grabbing;
 }
 
+.item.drag-over {
+  border-color: color-mix(in srgb, var(--tier-color, #f3be4f) 82%, #ffffff);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--tier-color, #f3be4f) 72%, transparent),
+    0 0 18px color-mix(in srgb, var(--tier-color, #f3be4f) 42%, transparent);
+  transform: translateY(-2px);
+}
+
 .equipment-grid {
   grid-template-columns: 1fr 1fr;
 }
@@ -1232,15 +1268,21 @@ input:focus {
 }
 
 @media (max-width: 980px) {
+  html,
   body {
     overflow: auto;
+  }
+
+  body {
+    min-height: 100svh;
   }
 
   .game-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto auto;
     height: auto;
-    min-height: 100vh;
+    min-height: 100svh;
+    padding: max(0.45rem, env(safe-area-inset-top)) max(0.45rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.45rem, env(safe-area-inset-left));
   }
 
   .hud-header,
@@ -1256,46 +1298,264 @@ input:focus {
   .right-panel { grid-row: 4; }
 
   .stage {
-    min-height: 64vh;
+    min-height: min(64svh, 620px);
+    aspect-ratio: 16 / 10;
   }
 
   .side-panel {
     overflow: visible;
   }
+
+  .hud-header {
+    align-items: stretch;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(160px, 1fr) minmax(88px, 0.6fr);
+    width: 100%;
+  }
+
+  .save-box,
+  .xp-box,
+  .gold-box {
+    min-width: 0;
+  }
+
+  .panel-nav {
+    position: sticky;
+    top: 0.45rem;
+    z-index: 12;
+    backdrop-filter: blur(10px);
+  }
+
+  .left-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr);
+    align-items: start;
+  }
+
+  .right-panel {
+    gap: 0.65rem;
+  }
+
+  .shop-list,
+  .inventory-list {
+    grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
+  .auth-panel {
+    padding: 1rem;
+  }
+
+  .auth-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .game-shell {
+    gap: 0.45rem;
+  }
+
+  .hud-header {
+    padding: 0.48rem;
+  }
+
+  .hud-header > div:first-child {
+    width: 100%;
+  }
+
+  .hud-header h1 {
+    font-size: 0.88rem;
+  }
+
+  .header-actions {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+  }
+
+  .save-box {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 0.35rem;
+    text-align: left;
+  }
+
+  .save-box span,
+  .save-box strong {
+    grid-column: 1;
+  }
+
+  .save-box button {
+    width: auto;
+    min-width: 68px;
+    min-height: 34px;
+    margin-top: 0;
+  }
+
+  .xp-box,
+  .gold-box {
+    text-align: left;
+  }
+
+  .stage {
+    min-height: 50svh;
+    aspect-ratio: 4 / 5;
+  }
+
+  .level-roadmap {
+    top: 0.45rem;
+    right: 0.45rem;
+    left: 0.45rem;
+    padding: 0.38rem;
+  }
+
+  .roadmap-grid {
+    grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+  }
+
+  .road-level {
+    height: 20px;
+    font-size: 0.48rem;
+  }
+
   .combat-panel {
     top: 8.35rem;
   }
 
   .combatants {
-    inset: auto 1rem 48px 1rem;
-    grid-template-columns: 1fr 0.5fr 1fr;
+    inset: auto 0.35rem 42px 0.35rem;
+    grid-template-columns: minmax(92px, 0.8fr) minmax(28px, 0.24fr) minmax(92px, 0.8fr);
+    gap: 0.15rem;
   }
 
   .hero-sprite {
-    width: 118px;
-    height: 118px;
-    background-size: 1298px 590px;
-    background-position-y: -118px;
+    width: 104px;
+    height: 104px;
+    background-size: 1144px 520px;
+    background-position-y: -104px;
   }
 
   @keyframes archer {
     from { background-position-x: 0; }
-    to { background-position-x: -1298px; }
+    to { background-position-x: -1144px; }
   }
 
   .hero-wrap.dead .hero-sprite {
-    background-position-y: -472px;
+    background-position-y: -416px;
   }
 
   @keyframes archer-death {
     from { background-position-x: 0; }
-    to { background-position-x: -590px; }
+    to { background-position-x: -520px; }
+  }
+
+  .nameplate {
+    max-width: 96px;
   }
 
   .projectile-lane {
-    width: 280px;
+    width: 220px;
   }
+
+  .left-panel {
+    display: flex;
+  }
+
+  .panel {
+    padding: 0.5rem;
+  }
+
+  .panel-title {
+    margin-bottom: 0.55rem;
+  }
+
+  .panel h2 {
+    font-size: 0.92rem;
+  }
+
+  .panel-nav {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .panel-nav button {
+    min-height: 38px;
+    font-size: 0.72rem;
+  }
+
+  .status-card {
+    grid-template-columns: 78px 1fr;
+    gap: 0.5rem;
+  }
+
+  .status-hero {
+    width: 74px;
+    height: 74px;
+    background-size: 814px 370px;
+    background-position-y: -74px;
+  }
+
+  @keyframes status-archer {
+    from { background-position-x: 0; }
+    to { background-position-x: -814px; }
+  }
+
+  .shopkeeper-card {
+    grid-template-columns: 96px 1fr;
+    min-height: 86px;
+  }
+
+  .shopkeeper-stage {
+    width: 92px;
+    height: 74px;
+  }
+
+  .shopkeeper-sprite {
+    transform: scale(1.78);
+  }
+
+  .shop-list,
+  .inventory-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .item {
+    min-height: 136px;
+  }
+
+  .item-actions {
+    gap: 0.3rem;
+  }
+
+  .item-actions button {
+    min-height: 28px;
+  }
+
+  .equipment-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .shop-list,
+  .inventory-list {
+    grid-template-columns: 1fr;
+  }
+
+  .header-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .save-box {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .save-box span,
+  .save-box strong {
+    grid-column: 1 / -1;
+  }
+}
 }

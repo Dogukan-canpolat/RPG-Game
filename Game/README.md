@@ -152,13 +152,14 @@ Düşman can barı ve isim etiketi sprite boyu ile ground offset değerine göre
 
 ## Item ve Tier Sistemi
 
-Itemler 5 tier seviyesine sahiptir:
+Itemler 6 tier seviyesine sahiptir:
 
 1. T1 Sıradan
 2. T2 Kaliteli
 3. T3 Nadir
 4. T4 Destansı
 5. T5 Efsanevi
+6. T6 Çok Efsanevi
 
 Tier arttıkça:
 
@@ -166,6 +167,8 @@ Tier arttıkça:
 - Düşme ihtimali azalır.
 - Dükkan fiyatı ciddi artar.
 - Parçalandığında daha değerli malzeme bırakır.
+
+Yeni `16x16 RPG Item Pack 2` görselleri `assets/items2` klasörüne eklendi. Bu paketten gelen itemler düşman ganimet havuzuna dahil edildi. T6 Çok Efsanevi itemler yalnızca yüksek seviye düşmanlarda açılır ve düşme ağırlığı çok düşük olduğu için aşırı nadirdir.
 
 Itemler kare kartlar halinde gösterilir. Kartlarda item ikonu, isim, tier, level gereksinimi, bonuslar ve fiyat bilgisi bulunur.
 
@@ -220,6 +223,7 @@ Item parçalandığında envantere malzeme düşer.
 - Yüksek tier itemler genelde 3 parça verir.
 - Düşük tier itemlerden dal, bakır ve demir parçaları gelir.
 - Yüksek tier itemlerden gümüş, altın ve platin parçaları gelir.
+- Çok Efsanevi itemler parçalandığında ağırlıklı olarak platin ve altın malzemeler verir.
 
 Ayrı taş sayacı yoktur; tüm malzemeler envanterde item kartı olarak görünür.
 
