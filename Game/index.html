@@ -8,6 +8,33 @@
   </head>
   <body>
     <section class="auth-screen" id="authScreen">
+      <div class="auth-bg" aria-hidden="true">
+        <video class="storm-video" src="assets/video/storm-clouds.mp4" autoplay muted loop playsinline></video>
+        <div class="layer layer-0"></div>
+        <div class="layer layer-1"></div>
+        <div class="layer layer-2"></div>
+        <div class="layer layer-3"></div>
+        <div class="layer layer-lights-a"></div>
+        <div class="layer layer-4"></div>
+        <div class="layer layer-5"></div>
+        <div class="layer layer-lights-b"></div>
+        <div class="layer layer-6"></div>
+        <div class="layer layer-7"></div>
+        <div class="layer layer-8"></div>
+        <div class="layer layer-9"></div>
+      </div>
+      <div class="auth-character auth-hero" aria-hidden="true">
+        <div class="auth-hero-sprite"></div>
+      </div>
+      <div class="auth-character auth-shopkeeper" aria-hidden="true">
+        <div class="shopkeeper-sprite">
+          <i class="npc-layer npc-skin"></i>
+          <i class="npc-layer npc-hair"></i>
+          <i class="npc-layer npc-corset"></i>
+          <i class="npc-layer npc-skirt"></i>
+          <i class="npc-layer npc-socks"></i>
+        </div>
+      </div>
       <form class="auth-panel" id="authForm">
         <p>RPG Sonsuz Av</p>
         <h1>Karakterine Giriş Yap</h1>
@@ -37,6 +64,7 @@
           <div class="save-box">
             <span id="saveStatus">Giriş bekleniyor</span>
             <strong id="currentUserText">Misafir</strong>
+            <button type="button" id="soundToggleButton">Ses Açık</button>
             <button type="button" id="logoutButton">Çıkış</button>
             <button type="button" id="resetButton">Sıfırla</button>
           </div>
@@ -63,8 +91,8 @@
 
         <section class="panel enemy-list-panel">
           <div class="panel-title">
-            <h2>Düşmanlar</h2>
-            <span>Test</span>
+            <h2>Bestiary</h2>
+            <span>Ansiklopedi</span>
           </div>
           <div class="enemy-list" id="enemyList"></div>
         </section>
@@ -153,6 +181,10 @@
             <h2>Dükkan</h2>
             <span id="shopHint">Ekipman al</span>
           </div>
+          <div class="shop-refresh">
+            <span id="shopRefreshHint">Stok yenile</span>
+            <button type="button" id="refreshShopButton">Yenile</button>
+          </div>
           <div class="shopkeeper-card" aria-label="Dükkan görevlisi">
             <div class="shopkeeper-stage">
               <div class="shopkeeper-sprite" aria-hidden="true">
@@ -191,7 +223,8 @@
             <span id="craftHint">0 / 3 parça</span>
           </div>
           <div class="crafting-list" id="craftingList"></div>
-          <button type="button" class="craft-button" id="craftButton">Yeni Item Oluştur</button>
+          <div class="recipe-list" id="recipeList"></div>
+          <button type="button" class="craft-button" id="craftButton">Tarifi Birleştir</button>
         </section>
 
         <section class="panel inventory-panel">
@@ -203,6 +236,9 @@
         </section>
       </aside>
     </main>
+
+    <div class="compare-panel" id="comparePanel" hidden></div>
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="false"></div>
 
     <script type="module" src="src/game.js"></script>
   </body>

@@ -1,4 +1,48 @@
-﻿const state = {
+import { enemies, enemyPosition } from "./data/enemies.js";
+import {
+  allLootItems,
+  allShopItems,
+  craftRecipes,
+  itemCatalog,
+  materialItems,
+  salvageMaterialsByTier,
+  shopItems,
+  tierConfig,
+} from "./data/items.js";
+import { createAudioEngine } from "./systems/audio.js";
+import {
+  clamp,
+  getEnemyAnimationName as getCombatEnemyAnimationName,
+  getEnemyGroundOffset as getCombatEnemyGroundOffset,
+  getEnemyPosition as getCombatEnemyPosition,
+  getMobileCombatScale as getCombatMobileCombatScale,
+  getStageWidth as getCombatStageWidth,
+  randomBetween,
+} from "./systems/combat.js";
+import {
+  getDeathXpPenalty as calculateDeathXpPenalty,
+  getEnemyGoldReward as calculateEnemyGoldReward,
+  getEnemyXpReward as calculateEnemyXpReward,
+  getLootLevelModifier as calculateLootLevelModifier,
+  getShopRefreshCost as calculateShopRefreshCost,
+  getUpgradeCost as calculateUpgradeCost,
+  getXpForNextLevel,
+} from "./systems/economy.js";
+import { createItemHelpers } from "./systems/inventory.js";
+import { showToast as pushToast } from "./ui/toast.js";
+
+const {
+  getItemIcon,
+  getItemRequiredLevel,
+  getItemTier,
+  getItemTierConfig,
+  getItemType,
+  getItemEffect,
+  getItemDuration,
+  getItemQuantity,
+} = createItemHelpers(itemCatalog, tierConfig);
+
+const state = {
   session: {
     active: false,
     username: "",
@@ -34,6 +78,8 @@
   craftingSlots: [null, null, null],
   activePanel: "shop",
   activeEffects: [],
+  bestiary: {},
+  soundEnabled: true,
   killsSinceLoot: 0,
   lastEnemyName: "",
   lastAttackAt: 0,
@@ -44,139 +90,7 @@
   panelsDirty: true,
 };
 
-const enemyPosition = {
-  approachSpan: 285,
-  contactOffset: -92,
-};
-
-const enemies = [
-  {
-    name: "Hallokin",
-    width: 500,
-    frameWidth: 192,
-    frameHeight: 128,
-    groundOffset: 123,
-    facing: -1,
-    animations: {
-      idle: { image: "assets/enemies/hallokin/idle.png", frames: 6, frameMs: 120 },
-      run: { image: "assets/enemies/hallokin/run.png", frames: 4, frameMs: 90 },
-      attack: { image: "assets/enemies/hallokin/attack.png", frames: 6, frameMs: 85 },
-    },
-  },
-  {
-    name: "VFX Yarasa",
-    width: 240,
-    frameWidth: 64,
-    frameHeight: 64,
-    groundOffset: 24,
-    facing: 1,
-    animations: {
-      idle: { image: "assets/enemies/bat/idle.png", frames: 9, frameMs: 95 },
-      run: { image: "assets/enemies/bat/run.png", frames: 8, frameMs: 80 },
-      attack: { image: "assets/enemies/bat/attack.png", frames: 8, frameMs: 75 },
-    },
-  },
-  {
-    name: "Kör Avcı",
-    width: 390,
-    frameWidth: 240,
-    frameHeight: 128,
-    groundOffset: 73,
-    facing: -1,
-    animations: {
-      idle: { image: "assets/enemies/huntress/idle.png", frames: 12, frameMs: 105 },
-      run: { image: "assets/enemies/huntress/run.png", frames: 8, frameMs: 85 },
-      attack: { image: "assets/enemies/huntress/attack.png", frames: 3, frameMs: 95 },
-    },
-  },
-  {
-    name: "Bataklık Gölgesi",
-    width: 500,
-    frameWidth: 247,
-    frameHeight: 87,
-    groundOffset: 0,
-    facing: -1,
-    animations: {
-      idle: { image: "assets/enemies/wetlands-boss/idle.png", frames: 14, frameMs: 100 },
-      run: { image: "assets/enemies/wetlands-boss/run.png", frames: 14, frameMs: 85 },
-      attack: { image: "assets/enemies/wetlands-boss/attack.png", frames: 10, frameMs: 75 },
-    },
-  },
-  {
-    name: "Minotor",
-    width: 220,
-    frameWidth: 96,
-    frameHeight: 96,
-    groundOffset: 70,
-    facing: -1,
-    animations: {
-      idle: { image: "assets/enemies/minotaur/idle.png", frames: 5, frameMs: 130 },
-      run: { image: "assets/enemies/minotaur/run.png", frames: 8, frameMs: 90 },
-      attack: { image: "assets/enemies/minotaur/attack.png", frames: 9, frameMs: 80 },
-    },
-  },
-  {
-    name: "Boşluk Azraili",
-    width: 340,
-    frameWidth: 250,
-    frameHeight: 250,
-    groundOffset: 102,
-    facing: -1,
-    animations: {
-      idle: { image: "assets/enemies/void-reaper/run.png", frames: 8, frameMs: 120 },
-      run: { image: "assets/enemies/void-reaper/run.png", frames: 8, frameMs: 80 },
-      attack: { image: "assets/enemies/void-reaper/attack2.png", frames: 8, frameMs: 85 },
-      attackAlt: { image: "assets/enemies/void-reaper/attack1.png", frames: 8, frameMs: 85 },
-      death: { image: "assets/enemies/void-reaper/death.png", frames: 7, frameMs: 110 },
-    },
-  },
-  {
-    name: "İskelet Savaşçı",
-    width: 180,
-    frameWidth: 43,
-    frameHeight: 37,
-    groundOffset: 7,
-    facing: -1,
-    attackLunge: -8,
-    animations: {
-      idle: { image: "assets/enemies/skeleton/walk.png", frames: 13, frameMs: 130, frameWidth: 22, frameHeight: 33, width: 118 },
-      run: { image: "assets/enemies/skeleton/walk.png", frames: 13, frameMs: 80, frameWidth: 22, frameHeight: 33, width: 118 },
-      attack: { image: "assets/enemies/skeleton/attack_body_anchor.png", frames: 18, frameMs: 95, frameWidth: 72, frameHeight: 37.5, width: 330 },
-      death: { image: "assets/enemies/skeleton/death.png", frames: 15, frameMs: 85, frameWidth: 33, frameHeight: 32, width: 174 },
-    },
-  },
-  {
-    name: "Kızıl Şövalye",
-    width: 248,
-    frameWidth: 96,
-    frameHeight: 64,
-    groundOffset: 44,
-    facing: -1,
-    attackLunge: -20,
-    animations: {
-      idle: { image: "assets/enemies/knight/run.png", frames: 8, frameMs: 150 },
-      run: { image: "assets/enemies/knight/run.png", frames: 8, frameMs: 82 },
-      attack: { image: "assets/enemies/knight/attack_stable.png", frames: 24, frameMs: 44, frameWidth: 132, frameHeight: 64, width: 340 },
-      death: { image: "assets/enemies/knight/death.png", frames: 15, frameMs: 90, frameWidth: 96, frameHeight: 64, width: 248 },
-    },
-  },
-  {
-    name: "Nekromant",
-    width: 220,
-    frameWidth: 96,
-    frameHeight: 96,
-    groundOffset: 52,
-    facing: -1,
-    attackLunge: 0,
-    attackScale: 1,
-    animations: {
-      idle: { image: "assets/enemies/necromancer/walk.png", frames: 10, frameMs: 150 },
-      run: { image: "assets/enemies/necromancer/walk.png", frames: 10, frameMs: 95 },
-      attack: { image: "assets/enemies/necromancer/attack_stable.png", frames: 47, frameMs: 24, frameWidth: 128, frameHeight: 128, width: 292, groundOffset: 88 },
-      death: { image: "assets/enemies/necromancer/death.png", frames: 52, frameMs: 58, frameWidth: 96, frameHeight: 96, width: 220 },
-    },
-  },
-];
+const audioEngine = createAudioEngine(() => state.soundEnabled);
 
 const upgradeConfig = {
   vitality: {
@@ -221,120 +135,9 @@ const upgradeConfig = {
   },
 };
 
-const tierConfig = {
-  1: { label: "Sıradan", color: "#b9aea3", dropWeight: 620, gemMin: 1, gemMax: 2 },
-  2: { label: "Kaliteli", color: "#79d28b", dropWeight: 240, gemMin: 2, gemMax: 4 },
-  3: { label: "Nadir", color: "#77a9ff", dropWeight: 100, gemMin: 4, gemMax: 7 },
-  4: { label: "Destansı", color: "#b982ff", dropWeight: 33, gemMin: 8, gemMax: 13 },
-  5: { label: "Efsanevi", color: "#f3be4f", dropWeight: 7, gemMin: 16, gemMax: 26 },
-  6: { label: "Çok Efsanevi", color: "#ff4fd8", dropWeight: 1, gemMin: 32, gemMax: 48 },
-};
+// Item katalogları src/data/items.js modülünden gelir.
 
-const shopItems = [
-  { id: "ash-bow", name: "Kül Yayı", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 1, cost: 260, damage: 8, attackSpeed: 0.05, icon: "assets/items/Item__16.png" },
-  { id: "ranger-cloak", name: "Gezgin Pelerini", type: "equipment", slot: "armor", tier: 1, requiredLevel: 2, cost: 390, maxHealth: 55, icon: "assets/items/Item__60.png" },
-  { id: "hunter-ring", name: "Avcı Yüzüğü", type: "equipment", slot: "ring", tier: 2, requiredLevel: 3, cost: 950, damage: 10, maxHealth: 20, icon: "assets/items/Item__40.png" },
-  { id: "storm-bow", name: "Fırtına Yayı", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 4, cost: 1350, damage: 20, attackSpeed: 0.12, icon: "assets/items/Item__19.png" },
-  { id: "iron-helm", name: "Demir Başlık", type: "equipment", slot: "helmet", tier: 2, requiredLevel: 4, cost: 1180, maxHealth: 70, icon: "assets/items/Item__44.png" },
-  { id: "swift-gloves", name: "Çevik Eldiven", type: "equipment", slot: "gloves", tier: 3, requiredLevel: 5, cost: 3600, damage: 7, attackSpeed: 0.1, icon: "assets/items/Item__62.png" },
-  { id: "moon-armor", name: "Ay Zırhı", type: "equipment", slot: "armor", tier: 4, requiredLevel: 7, cost: 11800, maxHealth: 130, damage: 8, icon: "assets/items/Item__59.png" },
-  { id: "night-bow", name: "Gece Yayı", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 8, cost: 14600, damage: 34, attackSpeed: 0.18, icon: "assets/items/Item__18.png" },
-  { id: "power-potion", name: "Güç İksiri", type: "potion", tier: 2, requiredLevel: 1, cost: 780, effect: { damage: 12 }, durationMs: 30000, icon: "assets/items/Item__28.png" },
-  { id: "haste-potion", name: "Hız İksiri", type: "potion", tier: 2, requiredLevel: 1, cost: 920, effect: { attackSpeed: 0.28 }, durationMs: 30000, icon: "assets/items/Item__30.png" },
-  { id: "guardian-potion", name: "Muhafız İksiri", type: "potion", tier: 3, requiredLevel: 3, cost: 2100, effect: { maxHealth: 90 }, durationMs: 45000, icon: "assets/items/Item__31.png" },
-];
-
-const lootItems = [
-  { id: "fang-necklace", name: "Diş Kolyesi", type: "equipment", slot: "ring", tier: 1, requiredLevel: 1, damage: 6, maxHealth: 12, icon: "assets/items/Item__34.png" },
-  { id: "ember-gloves", name: "Köz Eldiveni", type: "equipment", slot: "gloves", tier: 2, requiredLevel: 2, damage: 8, attackSpeed: 0.04, icon: "assets/items/Item__61.png" },
-  { id: "shadow-hood", name: "Gölge Başlığı", type: "equipment", slot: "helmet", tier: 1, requiredLevel: 3, maxHealth: 35, icon: "assets/items/Item__55.png" },
-  { id: "storm-string", name: "Fırtına Kirişi", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 4, damage: 14, attackSpeed: 0.08, icon: "assets/items/Item__17.png" },
-  { id: "bone-guard", name: "Kemik Muhafız", type: "equipment", slot: "armor", tier: 2, requiredLevel: 5, maxHealth: 85, icon: "assets/items/Item__24.png" },
-  { id: "blood-band", name: "Kan Halkası", type: "equipment", slot: "ring", tier: 3, requiredLevel: 6, damage: 14, maxHealth: 28, icon: "assets/items/Item__42.png" },
-  { id: "phantom-grip", name: "Hayalet Kavrayış", type: "equipment", slot: "gloves", tier: 3, requiredLevel: 7, damage: 12, attackSpeed: 0.12, icon: "assets/items/Item__52.png" },
-  { id: "void-crown", name: "Boşluk Tacı", type: "equipment", slot: "helmet", tier: 4, requiredLevel: 8, damage: 18, maxHealth: 55, icon: "assets/items/Item__53.png" },
-  { id: "eclipse-bow", name: "Tutulma Yayı", type: "equipment", slot: "weapon", tier: 5, requiredLevel: 10, damage: 44, attackSpeed: 0.22, icon: "assets/items/Item__23.png" },
-  { id: "warden-plate", name: "Bekçi Zırhı", type: "equipment", slot: "armor", tier: 5, requiredLevel: 11, maxHealth: 190, damage: 10, icon: "assets/items/Item__58.png" },
-  { id: "wild-power-potion", name: "Vahşi Güç İksiri", type: "potion", tier: 3, requiredLevel: 3, damage: 0, effect: { damage: 18 }, durationMs: 40000, icon: "assets/items/Item__29.png" },
-  { id: "ancient-haste-potion", name: "Kadim Hız İksiri", type: "potion", tier: 4, requiredLevel: 6, effect: { attackSpeed: 0.42 }, durationMs: 45000, icon: "assets/items/Item__30.png" },
-];
-
-const packTwoLootItems = [
-  { id: "pack2-squire-blade", name: "Çırak Kılıcı", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 1, damage: 5, attackSpeed: 0.03, icon: "assets/items2/Item_00.png" },
-  { id: "pack2-silver-needle", name: "Gümüş İğne", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 1, damage: 6, attackSpeed: 0.04, icon: "assets/items2/Item_01.png" },
-  { id: "pack2-iron-dagger", name: "Demir Hançer", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 2, damage: 7, attackSpeed: 0.03, icon: "assets/items2/Item_02.png" },
-  { id: "pack2-rusty-pick", name: "Paslı Kazma", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 2, damage: 8, icon: "assets/items2/Item_03.png" },
-  { id: "pack2-copper-spear", name: "Bakır Mızrak", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 3, damage: 9, icon: "assets/items2/Item_04.png" },
-  { id: "pack2-long-needle", name: "Uzun İğne", type: "equipment", slot: "weapon", tier: 1, requiredLevel: 3, damage: 10, attackSpeed: 0.03, icon: "assets/items2/Item_05.png" },
-  { id: "pack2-hooked-axe", name: "Kancalı Balta", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 4, damage: 14, icon: "assets/items2/Item_06.png" },
-  { id: "pack2-ember-rod", name: "Köz Asası", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 4, damage: 13, attackSpeed: 0.05, icon: "assets/items2/Item_07.png" },
-  { id: "pack2-ice-spear", name: "Buz Mızrağı", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 5, damage: 15, icon: "assets/items2/Item_08.png" },
-  { id: "pack2-sun-pike", name: "Güneş Kargısı", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 5, damage: 16, attackSpeed: 0.04, icon: "assets/items2/Item_09.png" },
-  { id: "pack2-flame-lance", name: "Alev Kargısı", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 6, damage: 18, icon: "assets/items2/Item_10.png" },
-  { id: "pack2-verdant-lance", name: "Yosun Kargısı", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 6, damage: 17, attackSpeed: 0.06, icon: "assets/items2/Item_11.png" },
-  { id: "pack2-moon-hatchet", name: "Ay Baltası", type: "equipment", slot: "weapon", tier: 2, requiredLevel: 7, damage: 19, icon: "assets/items2/Item_12.png" },
-  { id: "pack2-bone-cleaver", name: "Kemik Satır", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 8, damage: 24, icon: "assets/items2/Item_13.png" },
-  { id: "pack2-wolf-hatchet", name: "Kurt Baltası", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 8, damage: 23, attackSpeed: 0.06, icon: "assets/items2/Item_14.png" },
-  { id: "pack2-storm-axe", name: "Fırtına Baltası", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 9, damage: 26, icon: "assets/items2/Item_15.png" },
-  { id: "pack2-curved-fang", name: "Kıvrık Diş", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 9, damage: 25, attackSpeed: 0.07, icon: "assets/items2/Item_16.png" },
-  { id: "pack2-blackthorn-mace", name: "Karatiken Gürz", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 10, damage: 28, icon: "assets/items2/Item_17.png" },
-  { id: "pack2-miner-pick", name: "Usta Kazması", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 10, damage: 27, icon: "assets/items2/Item_18.png" },
-  { id: "pack2-oath-hammer", name: "Yemin Çekici", type: "equipment", slot: "weapon", tier: 3, requiredLevel: 11, damage: 30, icon: "assets/items2/Item_19.png" },
-  { id: "pack2-golden-key", name: "Altın Anahtar", type: "equipment", slot: "ring", tier: 4, requiredLevel: 12, damage: 18, maxHealth: 85, icon: "assets/items2/Item_20.png" },
-  { id: "pack2-dawn-ring", name: "Şafak Halkası", type: "equipment", slot: "ring", tier: 4, requiredLevel: 13, damage: 20, maxHealth: 95, attackSpeed: 0.06, icon: "assets/items2/Item_21.png" },
-  { id: "pack2-golden-scythe", name: "Altın Orak", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 14, damage: 40, attackSpeed: 0.1, icon: "assets/items2/Item_22.png" },
-  { id: "pack2-night-scythe", name: "Gece Orağı", type: "equipment", slot: "weapon", tier: 6, requiredLevel: 45, damage: 118, attackSpeed: 0.28, icon: "assets/items2/Item_23.png" },
-  { id: "pack2-frost-mace", name: "Buz Gürzü", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 15, damage: 42, icon: "assets/items2/Item_24.png" },
-  { id: "pack2-stone-pick", name: "Taş Kazması", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 16, damage: 44, icon: "assets/items2/Item_25.png" },
-  { id: "pack2-war-pick", name: "Savaş Kazması", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 16, damage: 46, attackSpeed: 0.08, icon: "assets/items2/Item_26.png" },
-  { id: "pack2-silver-hammer", name: "Gümüş Çekiç", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 17, damage: 48, icon: "assets/items2/Item_27.png" },
-  { id: "pack2-seer-staff", name: "Kahin Asası", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 18, damage: 43, attackSpeed: 0.14, icon: "assets/items2/Item_28.png" },
-  { id: "pack2-sun-staff", name: "Güneş Asası", type: "equipment", slot: "weapon", tier: 4, requiredLevel: 18, damage: 45, attackSpeed: 0.12, icon: "assets/items2/Item_29.png" },
-  { id: "pack2-sky-staff", name: "Gök Asası", type: "equipment", slot: "weapon", tier: 5, requiredLevel: 22, damage: 62, attackSpeed: 0.15, icon: "assets/items2/Item_30.png" },
-  { id: "pack2-royal-staff", name: "Kraliyet Asası", type: "equipment", slot: "weapon", tier: 5, requiredLevel: 24, damage: 68, attackSpeed: 0.16, icon: "assets/items2/Item_31.png" },
-  { id: "pack2-blood-moon-charm", name: "Kan Ay Tılsımı", type: "equipment", slot: "ring", tier: 5, requiredLevel: 25, damage: 40, maxHealth: 120, icon: "assets/items2/Item_32.png" },
-  { id: "pack2-ice-shard", name: "Buz Parçası", type: "equipment", slot: "ring", tier: 5, requiredLevel: 26, damage: 42, maxHealth: 135, icon: "assets/items2/Item_33.png" },
-  { id: "pack2-mirror-shield", name: "Ayna Kalkanı", type: "equipment", slot: "armor", tier: 5, requiredLevel: 27, maxHealth: 260, damage: 24, icon: "assets/items2/Item_34.png" },
-  { id: "pack2-forbidden-tome", name: "Yasak Kitap", type: "potion", tier: 5, requiredLevel: 28, effect: { damage: 58, attackSpeed: 0.22 }, durationMs: 55000, icon: "assets/items2/Item_35.png" },
-  { id: "pack2-giant-elixir", name: "Dev İksiri", type: "potion", tier: 5, requiredLevel: 28, effect: { maxHealth: 360, damage: 28 }, durationMs: 60000, icon: "assets/items2/Item_36.png" },
-  { id: "pack2-iron-mask", name: "Demir Maske", type: "equipment", slot: "helmet", tier: 5, requiredLevel: 29, maxHealth: 240, damage: 28, icon: "assets/items2/Item_37.png" },
-  { id: "pack2-creator-crown", name: "Yaratıcı Tacı", type: "equipment", slot: "helmet", tier: 6, requiredLevel: 50, maxHealth: 520, damage: 72, attackSpeed: 0.12, icon: "assets/items2/Item_38.png" },
-  { id: "pack2-witch-hat", name: "Cadı Şapkası", type: "equipment", slot: "helmet", tier: 5, requiredLevel: 30, maxHealth: 230, damage: 36, attackSpeed: 0.08, icon: "assets/items2/Item_39.png" },
-  { id: "pack2-crimson-glove", name: "Kızıl Eldiven", type: "equipment", slot: "gloves", tier: 5, requiredLevel: 31, damage: 48, attackSpeed: 0.18, icon: "assets/items2/Item_40.png" },
-  { id: "pack2-oracle-wand", name: "Kehanet Değneği", type: "equipment", slot: "weapon", tier: 5, requiredLevel: 32, damage: 74, attackSpeed: 0.18, icon: "assets/items2/Item_41.png" },
-  { id: "pack2-oath-plate", name: "Yemin Zırhı", type: "equipment", slot: "armor", tier: 5, requiredLevel: 33, maxHealth: 330, damage: 30, icon: "assets/items2/Item_42.png" },
-  { id: "pack2-celestial-gauntlets", name: "Göksel Eldiven", type: "equipment", slot: "gloves", tier: 6, requiredLevel: 48, damage: 92, attackSpeed: 0.3, icon: "assets/items2/Item_43.png" },
-  { id: "pack2-abyss-hood", name: "Uçurum Başlığı", type: "equipment", slot: "helmet", tier: 6, requiredLevel: 52, maxHealth: 480, damage: 82, icon: "assets/items2/Item_44.png" },
-  { id: "pack2-ancient-chest", name: "Kadim Göğüslük", type: "equipment", slot: "armor", tier: 6, requiredLevel: 55, maxHealth: 700, damage: 58, icon: "assets/items2/Item_45.png" },
-  { id: "pack2-soul-skull", name: "Ruh Kafatası", type: "equipment", slot: "ring", tier: 6, requiredLevel: 60, damage: 105, maxHealth: 260, attackSpeed: 0.18, icon: "assets/items2/Item_46.png" },
-];
-
-const materialItems = [
-  { id: "stick", name: "Dal Parçası", type: "material", tier: 1, requiredLevel: 1, icon: "assets/materials/stick.png" },
-  { id: "copper-ore", name: "Bakır Cevheri", type: "material", tier: 1, requiredLevel: 1, icon: "assets/materials/copper_ore.png" },
-  { id: "copper-ingot", name: "Bakır Külçesi", type: "material", tier: 2, requiredLevel: 1, icon: "assets/materials/copper_ingot.png" },
-  { id: "iron-ore", name: "Demir Cevheri", type: "material", tier: 2, requiredLevel: 1, icon: "assets/materials/iron_ore.png" },
-  { id: "iron-ingot", name: "Demir Külçesi", type: "material", tier: 3, requiredLevel: 1, icon: "assets/materials/iron_ingot.png" },
-  { id: "silver-ore", name: "Gümüş Cevheri", type: "material", tier: 3, requiredLevel: 1, icon: "assets/materials/silver_ore.png" },
-  { id: "silver-ingot", name: "Gümüş Külçesi", type: "material", tier: 4, requiredLevel: 1, icon: "assets/materials/silver_ingot.png" },
-  { id: "gold-ore", name: "Altın Cevheri", type: "material", tier: 4, requiredLevel: 1, icon: "assets/materials/gold_ore.png" },
-  { id: "gold-ingot", name: "Altın Külçesi", type: "material", tier: 5, requiredLevel: 1, icon: "assets/materials/gold_ingot.png" },
-  { id: "platinum-ore", name: "Platin Cevheri", type: "material", tier: 5, requiredLevel: 1, icon: "assets/materials/platinum_ore.png" },
-  { id: "platinum-ingot", name: "Platin Külçesi", type: "material", tier: 5, requiredLevel: 1, icon: "assets/materials/platinum_ingot.png" },
-];
-
-const salvageMaterialsByTier = {
-  1: ["stick", "copper-ore"],
-  2: ["copper-ingot", "iron-ore"],
-  3: ["iron-ingot", "silver-ore"],
-  4: ["silver-ingot", "gold-ore"],
-  5: ["gold-ingot", "platinum-ore", "platinum-ingot"],
-  6: ["platinum-ingot", "gold-ingot", "platinum-ore"],
-};
-
-const allLootItems = [...lootItems, ...packTwoLootItems];
-const itemCatalog = new Map([...shopItems, ...allLootItems, ...materialItems].map((item) => [item.id, item]));
-
+// Kullanıcı oturumu, kayıt verisi ve eski kayıt uyumluluğu.
 function normalizeUsername(value) {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
@@ -361,16 +164,13 @@ function createSaveData() {
     equipped: structuredClone(state.equipped),
     shopStock: structuredClone(state.shopStock),
     activeEffects: serializeActiveEffects(),
+    bestiary: structuredClone(state.bestiary),
+    soundEnabled: state.soundEnabled,
     killsSinceLoot: state.killsSinceLoot,
     lastEnemyName: state.lastEnemyName,
     enemy: state.enemy ? serializeEnemy(state.enemy) : null,
     savedAt: new Date().toISOString(),
   };
-}
-
-function getXpForNextLevel(level) {
-  const safeLevel = Math.max(1, Number(level) || 1);
-  return Math.round(85 + Math.pow(safeLevel, 1.62) * 58 + safeLevel * 22);
 }
 
 function serializeEnemy(enemy) {
@@ -542,9 +342,10 @@ function createStockItem(item) {
   return { ...item, stockId: crypto.randomUUID() };
 }
 
+// Dükkan havuzu: eski sabit itemler + yeni paket itemleri, T6 için geç seviye kapısı.
 function getShopTemplatePool() {
   const heroLevel = Math.max(1, Number(state.hero.level) || 1);
-  return [...shopItems, ...packTwoLootItems]
+  return allShopItems
     .filter((item) => getItemType(item) !== "material")
     .filter((item) => getItemTier(item) < 6 || heroLevel >= Math.max(35, getItemRequiredLevel(item) - 10));
 }
@@ -677,7 +478,7 @@ function refreshShopStock(stock) {
     if (normalized[index].id?.startsWith("pack2-")) continue;
     const template = chooseShopTemplate(usedIds);
     if (!template?.id?.startsWith("pack2-")) {
-      const directPackTemplate = packTwoLootItems.find((item) => !usedIds.has(item.id) && getItemTier(item) < 6);
+      const directPackTemplate = allLootItems.find((item) => item.id?.startsWith("pack2-") && !usedIds.has(item.id) && getItemTier(item) < 6);
       if (!directPackTemplate) break;
       usedIds.add(directPackTemplate.id);
       normalized[index] = createStockItem(rebalanceShopItem(directPackTemplate));
@@ -726,6 +527,8 @@ function loadSaveData(saveData) {
     ? refreshShopStock(saveData.shopStock)
     : createInitialShopStock();
   state.activeEffects = restoreActiveEffects(saveData.activeEffects);
+  state.bestiary = saveData.bestiary && typeof saveData.bestiary === "object" ? saveData.bestiary : {};
+  state.soundEnabled = saveData.soundEnabled !== false;
   state.killsSinceLoot = Number(saveData.killsSinceLoot) || 0;
   state.lastEnemyName = saveData.lastEnemyName || "";
   state.enemy = restoreEnemy(saveData.enemy);
@@ -759,6 +562,8 @@ function resetCharacterState() {
   state.craftingSlots = [null, null, null];
   state.activePanel = "shop";
   state.activeEffects = [];
+  state.bestiary = {};
+  state.soundEnabled = true;
   state.killsSinceLoot = 0;
   state.lastEnemyName = "";
 }
@@ -774,6 +579,7 @@ const els = {
   saveStatus: document.querySelector("#saveStatus"),
   logoutButton: document.querySelector("#logoutButton"),
   resetButton: document.querySelector("#resetButton"),
+  soundToggleButton: document.querySelector("#soundToggleButton"),
   heroLevel: document.querySelector("#heroLevel"),
   healthText: document.querySelector("#healthText"),
   healthBar: document.querySelector("#healthBar"),
@@ -796,10 +602,13 @@ const els = {
   enemyList: document.querySelector("#enemyList"),
   shopList: document.querySelector("#shopList"),
   shopHint: document.querySelector("#shopHint"),
+  refreshShopButton: document.querySelector("#refreshShopButton"),
+  shopRefreshHint: document.querySelector("#shopRefreshHint"),
   inventoryList: document.querySelector("#inventoryList"),
   inventoryCount: document.querySelector("#inventoryCount"),
   equipmentGrid: document.querySelector("#equipmentGrid"),
   craftingList: document.querySelector("#craftingList"),
+  recipeList: document.querySelector("#recipeList"),
   craftHint: document.querySelector("#craftHint"),
   craftButton: document.querySelector("#craftButton"),
   panelTabs: document.querySelectorAll("[data-panel-tab]"),
@@ -809,6 +618,8 @@ const els = {
   projectileLane: document.querySelector("#projectileLane"),
   deathOverlay: document.querySelector("#deathOverlay"),
   deathCountdown: document.querySelector("#deathCountdown"),
+  comparePanel: document.querySelector("#comparePanel"),
+  toastStack: document.querySelector("#toastStack"),
 };
 
 const slotLabels = {
@@ -819,38 +630,24 @@ const slotLabels = {
   ring: "Yüzük",
 };
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function getStageWidth() {
-  return els.stage?.clientWidth || window.innerWidth || 980;
+  return getCombatStageWidth(els.stage);
 }
 
 function getMobileCombatScale() {
-  const stageWidth = getStageWidth();
-  if (stageWidth >= 640) return 1;
-  return clamp(stageWidth / 560, 0.52, 1);
+  return getCombatMobileCombatScale(getStageWidth());
 }
 
 function getEnemyPosition() {
-  const stageWidth = getStageWidth();
-  if (stageWidth >= 640) return enemyPosition;
-
-  return {
-    approachSpan: clamp(stageWidth * 0.42, 115, enemyPosition.approachSpan),
-    contactOffset: -clamp(stageWidth * 0.16, 44, 82),
-  };
+  return getCombatEnemyPosition(getStageWidth(), enemyPosition);
 }
 
 function getEnemyAnimationName(now = performance.now()) {
-  if (!state.enemy) return "idle";
-  if (now < state.enemy.attackAnimUntil) return state.enemy.activeAttackAnim || "attack";
-  return state.enemy.distance > 0 ? "run" : "idle";
+  return getCombatEnemyAnimationName(state, now);
 }
 
 function getEnemyGroundOffset(animName = getEnemyAnimationName()) {
-  return state.enemy?.animations?.[animName]?.groundOffset ?? state.enemy?.groundOffset ?? 0;
+  return getCombatEnemyGroundOffset(state, animName);
 }
 
 els.enemyAvatar.addEventListener("animationend", (event) => {
@@ -891,6 +688,8 @@ els.resetButton.addEventListener("click", () => {
 });
 
 els.craftButton.addEventListener("click", () => craftItemFromMaterials());
+els.refreshShopButton.addEventListener("click", () => refreshShopForGold());
+els.soundToggleButton.addEventListener("click", () => toggleSound());
 
 els.panelTabs.forEach((button) => {
   button.addEventListener("click", () => {
@@ -983,6 +782,21 @@ function queueSave(message = "Kaydediliyor") {
   }, 650);
 }
 
+function showToast(message, type = "info") {
+  pushToast(els.toastStack, message, type);
+}
+
+function toggleSound() {
+  state.soundEnabled = !state.soundEnabled;
+  setSaveStatus(state.soundEnabled ? "Ses açıldı" : "Ses kapatıldı");
+  queueSave("Ses ayarı kaydediliyor");
+  render();
+}
+
+function playSound(kind) {
+  audioEngine.play(kind);
+}
+
 async function flushSave() {
   if (!state.session.active || !state.session.username || !state.session.token) return;
   clearTimeout(state.session.saveTimer);
@@ -1020,46 +834,11 @@ function getHeroAttackSpeed() {
 
 function getUpgradeCost(upgradeKey) {
   const upgrade = upgradeConfig[upgradeKey];
-  const purchased = state.hero.stats[upgradeKey] || 0;
-  return Math.round(upgrade.baseCost * Math.pow(upgrade.costGrowth, purchased));
+  return calculateUpgradeCost(upgrade, state.hero.stats[upgradeKey] || 0);
 }
 
 function canEquipItem(item) {
   return state.hero.level >= getItemRequiredLevel(item);
-}
-
-function getItemIcon(item) {
-  return itemCatalog.get(item.id)?.icon || item.icon || "assets/items/Item__00.png";
-}
-
-function getItemRequiredLevel(item) {
-  return itemCatalog.get(item.id)?.requiredLevel || item.requiredLevel || 1;
-}
-
-function getItemTier(item) {
-  return itemCatalog.get(item.id)?.tier || item.tier || 1;
-}
-
-function getItemTierConfig(item) {
-  return tierConfig[getItemTier(item)] || tierConfig[1];
-}
-
-function getItemType(item) {
-  return itemCatalog.get(item.id)?.type || item.type || "equipment";
-}
-
-function getItemEffect(item) {
-  return itemCatalog.get(item.id)?.effect || item.effect || {};
-}
-
-function getItemDuration(item) {
-  return itemCatalog.get(item.id)?.durationMs || item.durationMs || 0;
-}
-
-function getItemQuantity(item) {
-  if (!Object.prototype.hasOwnProperty.call(item, "quantity")) return 1;
-  const quantity = Number(item.quantity);
-  return Number.isFinite(quantity) ? Math.max(0, quantity) : 1;
 }
 
 function applyTierStyle(element, item) {
@@ -1124,18 +903,7 @@ function getRoadmapBlockStart(level) {
 }
 
 function getEnemyXpReward(enemyLevel) {
-  const safeEnemyLevel = Math.max(1, Number(enemyLevel) || 1);
-  const safeHeroLevel = Math.max(1, Number(state.hero.level) || 1);
-  const baseXp = Math.round(28 + safeEnemyLevel * 9 + Math.pow(safeEnemyLevel, 1.08) * 4);
-  const levelGap = safeHeroLevel - safeEnemyLevel;
-
-  if (levelGap <= 0) {
-    const bonus = Math.min(Math.abs(levelGap) * 0.06, 0.3);
-    return Math.round(baseXp * (1 + bonus));
-  }
-
-  const penalty = Math.min(levelGap * 0.12, 0.92);
-  return Math.max(1, Math.round(baseXp * (1 - penalty)));
+  return calculateEnemyXpReward(enemyLevel, state.hero.level);
 }
 
 function setRoadmapBlock(start) {
@@ -1195,6 +963,7 @@ function attackEnemy(now) {
   fireArrow();
   flashEnemy();
   showDamageNumber(damage);
+  playSound("hit");
   queueSave("Savaş kaydediliyor");
 
   if (state.enemy.health <= 0) {
@@ -1211,6 +980,7 @@ function enemyAttackHero(now) {
   state.lastEnemyAttackAt = now;
   state.hero.health = Math.max(0, state.hero.health - Math.round(state.enemy.damage * randomBetween(0.85, 1.2)));
   flashHero();
+  playSound("hit");
   lungeEnemy(now);
   queueSave("Savaş kaydediliyor");
 
@@ -1226,37 +996,43 @@ function defeatEnemy() {
   state.gold += earnedGold;
   state.hero.xp += earnedXp;
   state.killsSinceLoot += 1;
-  rollLoot(defeated.level);
+  const droppedItem = rollLoot(defeated.level);
+  recordBestiaryKill(defeated, droppedItem);
   levelUpIfNeeded();
   state.panelsDirty = true;
   spawnEnemy();
   queueSave("İlerleme kaydediliyor");
 }
 
+function getBestiaryEntry(enemyName) {
+  if (!state.bestiary[enemyName]) {
+    state.bestiary[enemyName] = {
+      kills: 0,
+      drops: 0,
+      highestLevel: 0,
+      lastDrop: "",
+    };
+  }
+  return state.bestiary[enemyName];
+}
+
+function recordBestiaryKill(enemy, droppedItem = null) {
+  const entry = getBestiaryEntry(enemy.name);
+  entry.kills += 1;
+  entry.highestLevel = Math.max(entry.highestLevel || 0, enemy.level || 1);
+  if (droppedItem) {
+    entry.drops += 1;
+    entry.lastDrop = droppedItem.name;
+  }
+}
+
+// Düşük level farmını azaltan ekonomi ayarları: XP, altın, item düşüşü ve ölüm cezası.
 function getEnemyGoldReward(enemy) {
-  const heroLevel = Math.max(1, Number(state.hero.level) || 1);
-  const enemyLevel = Math.max(1, Number(enemy.level) || 1);
-  const levelGap = Math.max(0, heroLevel - enemyLevel);
-  if (levelGap <= 0) return enemy.gold;
-
-  let modifier = 1;
-
-  if (levelGap <= 4) modifier = 0.7;
-  else if (levelGap <= 9) modifier = 0.45;
-  else if (levelGap <= 19) modifier = 0.2;
-  else modifier = 0.06;
-
-  return Math.max(1, Math.round(enemy.gold * modifier));
+  return calculateEnemyGoldReward(enemy, state.hero.level);
 }
 
 function getLootLevelModifier(enemyLevel) {
-  const heroLevel = Math.max(1, Number(state.hero.level) || 1);
-  const levelGap = Math.max(0, heroLevel - enemyLevel);
-  if (levelGap <= 0) return 1;
-  if (levelGap <= 4) return 0.55;
-  if (levelGap <= 9) return 0.25;
-  if (levelGap <= 19) return 0.08;
-  return 0.02;
+  return calculateLootLevelModifier(enemyLevel, state.hero.level);
 }
 
 function rollLoot(enemyLevel) {
@@ -1264,7 +1040,7 @@ function rollLoot(enemyLevel) {
   const dropChance = Math.min(0.035 + enemyLevel * 0.0015, 0.1) * levelModifier;
   const pityThreshold = Math.round(18 / levelModifier);
   const pityDrop = state.killsSinceLoot >= pityThreshold;
-  if (!pityDrop && Math.random() > dropChance) return;
+  if (!pityDrop && Math.random() > dropChance) return null;
 
   const selectedTier = chooseLootTier(enemyLevel);
   const tierPool = allLootItems.filter((item) => getItemTier(item) === selectedTier);
@@ -1277,11 +1053,18 @@ function rollLoot(enemyLevel) {
   });
   state.killsSinceLoot = 0;
   state.panelsDirty = true;
+  showToast(`${template.name} düştü`, `tier-${getItemTier(template)}`);
+  playSound("loot");
   queueSave("Ganimet kaydediliyor");
+  return template;
+}
+
+function getDeathXpPenalty() {
+  return calculateDeathXpPenalty(state.hero.level, state.wave);
 }
 
 function downHero(now) {
-  const xpPenalty = Math.min(state.hero.xp, Math.round(randomBetween(500, 700)));
+  const xpPenalty = Math.min(state.hero.xp, getDeathXpPenalty());
   state.hero.xp = Math.max(0, state.hero.xp - xpPenalty);
   state.heroDownUntil = now + 3000;
   state.hero.health = 0;
@@ -1327,6 +1110,8 @@ function levelUpIfNeeded() {
     state.lastAttackAt = 0;
     state.lastEnemyAttackAt = 0;
     setSaveStatus(`Level ${state.hero.level} açıldı`, 1600);
+    showToast(`Level ${state.hero.level} açıldı`, "level");
+    playSound("level");
   }
 }
 
@@ -1353,6 +1138,26 @@ function buyItem(stockId) {
   state.shopStock[stockIndex] = createReplacementShopItem(item);
   state.panelsDirty = true;
   queueSave("Alisveris kaydediliyor");
+  render();
+}
+
+function getShopRefreshCost() {
+  return calculateShopRefreshCost(state.hero.level, state.wave);
+}
+
+function refreshShopForGold() {
+  const cost = getShopRefreshCost();
+  if (state.gold < cost) {
+    setSaveStatus(`${cost} altın gerekli`);
+    return;
+  }
+
+  state.gold -= cost;
+  state.shopStock = createInitialShopStock();
+  state.panelsDirty = true;
+  setSaveStatus(`Dükkan yenilendi: -${cost} altın`);
+  showToast(`Dükkan yenilendi: -${cost} altın`, "shop");
+  queueSave("Dükkan yenilendi");
   render();
 }
 
@@ -1397,6 +1202,11 @@ function equipItem(uid) {
 }
 
 function salvageItem(uid) {
+  const target = state.inventory.find((entry) => entry.uid === uid);
+  if (isItemLocked(target)) {
+    setSaveStatus("Kilitli item parçalanamaz");
+    return;
+  }
   const item = removeInventoryItem(uid);
   if (!item) return;
   const gainedMaterialCount = 1;
@@ -1410,11 +1220,30 @@ function salvageItem(uid) {
 }
 
 function destroyItem(uid) {
+  const target = state.inventory.find((entry) => entry.uid === uid);
+  if (isItemLocked(target)) {
+    setSaveStatus("Kilitli item yok edilemez");
+    return;
+  }
   const item = removeInventoryItem(uid);
   if (!item) return;
   state.panelsDirty = true;
   setSaveStatus("Item yok edildi");
   queueSave("Item yok edildi");
+  render();
+}
+
+function isItemLocked(item) {
+  return Boolean(item?.locked);
+}
+
+function toggleItemLock(uid) {
+  const item = state.inventory.find((entry) => entry.uid === uid);
+  if (!item) return;
+  item.locked = !item.locked;
+  state.panelsDirty = true;
+  setSaveStatus(item.locked ? "Item kilitlendi" : "Item kilidi açıldı");
+  queueSave("Item kilidi kaydediliyor");
   render();
 }
 
@@ -1428,6 +1257,92 @@ function swapInventoryItems(sourceUid, targetUid) {
   state.panelsDirty = true;
   queueSave("Envanter sırası kaydediliyor");
   render();
+}
+
+function getComparableStat(item, key) {
+  const catalogItem = itemCatalog.get(item.id);
+  return Number(catalogItem?.[key] ?? item[key] ?? 0);
+}
+
+function formatStatDelta(value, suffix = "") {
+  if (value === 0) return `<span>0${suffix}</span>`;
+  const sign = value > 0 ? "+" : "";
+  const className = value > 0 ? "positive" : "negative";
+  return `<span class="${className}">${sign}${value}${suffix}</span>`;
+}
+
+function getItemComparisonHtml(item) {
+  const type = getItemType(item);
+  const tier = getItemTierConfig(item);
+  const title = `<strong>${item.name}</strong><small>T${getItemTier(item)} ${tier.label} - Lv ${getItemRequiredLevel(item)}</small>`;
+
+  if (type === "material") {
+    return `${title}<div class="compare-row"><span>Tür</span><b>Malzeme</b></div>`;
+  }
+
+  if (type === "potion") {
+    const effect = getItemEffect(item);
+    const rows = [
+      ["Hasar", effect.damage || 0],
+      ["Can", effect.maxHealth || 0],
+      ["Hız", effect.attackSpeed ? Math.round(effect.attackSpeed * 100) : 0, "%"],
+    ].filter(([, value]) => value);
+    return `${title}${rows.map(([label, value, suffix = ""]) => `
+      <div class="compare-row"><span>${label}</span><b>${formatStatDelta(value, suffix)}</b></div>
+    `).join("") || '<div class="compare-row"><span>Etki</span><b>Yok</b></div>'}`;
+  }
+
+  const equipped = state.equipped[item.slot];
+  const rows = [
+    ["Hasar", "damage", ""],
+    ["Can", "maxHealth", ""],
+    ["Hız", "attackSpeed", "%"],
+  ].map(([label, key, suffix]) => {
+    const value = key === "attackSpeed" ? Math.round(getComparableStat(item, key) * 100) : getComparableStat(item, key);
+    const current = equipped
+      ? (key === "attackSpeed" ? Math.round(getComparableStat(equipped, key) * 100) : getComparableStat(equipped, key))
+      : 0;
+    return [label, value, value - current, suffix];
+  });
+
+  return `${title}<em>${equipped ? `${equipped.name} ile karşılaştırılıyor` : `${slotLabels[item.slot]} slotu boş`}</em>${rows.map(([label, value, delta, suffix]) => `
+    <div class="compare-row">
+      <span>${label}: ${value}${suffix}</span>
+      <b>${formatStatDelta(delta, suffix)}</b>
+    </div>
+  `).join("")}`;
+}
+
+function positionComparePanel(event) {
+  const panel = els.comparePanel;
+  const offset = 14;
+  const rect = panel.getBoundingClientRect();
+  const targetRect = event.currentTarget?.getBoundingClientRect?.();
+  const clientX = Number.isFinite(event.clientX) ? event.clientX : (targetRect?.right || 20);
+  const clientY = Number.isFinite(event.clientY) ? event.clientY : (targetRect?.top || 20);
+  const left = Math.min(window.innerWidth - rect.width - 10, clientX + offset);
+  const top = Math.min(window.innerHeight - rect.height - 10, clientY + offset);
+  panel.style.left = `${Math.max(10, left)}px`;
+  panel.style.top = `${Math.max(10, top)}px`;
+}
+
+function showComparePanel(item, event) {
+  els.comparePanel.innerHTML = getItemComparisonHtml(item);
+  els.comparePanel.hidden = false;
+  positionComparePanel(event);
+}
+
+function hideComparePanel() {
+  els.comparePanel.hidden = true;
+}
+
+function bindItemPreview(row, item) {
+  row.tabIndex = 0;
+  row.addEventListener("mouseenter", (event) => showComparePanel(item, event));
+  row.addEventListener("mousemove", (event) => positionComparePanel(event));
+  row.addEventListener("mouseleave", hideComparePanel);
+  row.addEventListener("focusin", (event) => showComparePanel(item, event));
+  row.addEventListener("focusout", hideComparePanel);
 }
 
 function getMaterialPieces() {
@@ -1466,6 +1381,10 @@ function assignCraftSlot(slotIndex, uid) {
   const item = state.inventory.find((entry) => entry.uid === uid && getItemType(entry) === "material");
   if (!item) {
     setSaveStatus("Sadece parça eklenebilir");
+    return;
+  }
+  if (isItemLocked(item)) {
+    setSaveStatus("Kilitli parça kullanılamaz");
     return;
   }
 
@@ -1521,22 +1440,45 @@ function consumeCraftSlots() {
   return consumedTiers;
 }
 
+function getMaterialSignature(materialIds) {
+  return [...materialIds].sort().join("|");
+}
+
+function findCraftRecipe(slotItems) {
+  const signature = getMaterialSignature(slotItems.map((item) => item.id));
+  return craftRecipes.find((recipe) => getMaterialSignature(recipe.materialIds) === signature) || null;
+}
+
 function craftItemFromMaterials() {
   const slotItems = getCraftSlotItems();
   if (slotItems.some((item) => !item)) {
     setSaveStatus("3 slota parça sürükle");
     return;
   }
+  if (slotItems.some((item) => isItemLocked(item))) {
+    setSaveStatus("Kilitli parça kullanılamaz");
+    return;
+  }
 
-  const consumedTiers = consumeCraftSlots();
-  const averageTier = consumedTiers.reduce((sum, tier) => sum + tier, 0) / consumedTiers.length;
-  const craftedTier = Math.max(1, Math.min(6, Math.round(averageTier)));
-  const item = createGeneratedEquipment(craftedTier, "crafted", 0);
-  item.name = `Birleşik ${tierConfig[craftedTier].label} ${slotLabels[item.slot]}`;
-  item.cost = 0;
+  const recipe = findCraftRecipe(slotItems);
+  if (!recipe) {
+    setSaveStatus("Bu parçalar için tarif yok", 1600);
+    return;
+  }
+
+  consumeCraftSlots();
+  const template = itemCatalog.get(recipe.resultId);
+  if (!template) {
+    setSaveStatus("Tarif sonucu bulunamadı", 1600);
+    return;
+  }
+
+  const item = { ...template, cost: 0 };
   state.inventory.push({ ...item, uid: crypto.randomUUID(), source: "crafted" });
   state.panelsDirty = true;
   setSaveStatus(`${item.name} oluşturuldu`);
+  showToast(`${item.name} oluşturuldu`, `tier-${getItemTier(item)}`);
+  playSound("loot");
   queueSave("Item birleştirildi");
   render();
 }
@@ -1563,6 +1505,7 @@ function unequipItem(slot) {
 function fireArrow() {
   const arrow = document.createElement("span");
   arrow.className = "arrow";
+  playSound("arrow");
   positionProjectileLane();
   const distance = Math.max(120, els.projectileLane.getBoundingClientRect().width - 50);
   arrow.style.setProperty("--arrow-distance", `${distance}px`);
@@ -1616,10 +1559,6 @@ function lungeEnemy(now) {
   els.enemyAvatar.classList.add("attacking");
 }
 
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
-}
-
 function bonusParts(source) {
   return [
     source.damage ? `+${source.damage} hasar` : "",
@@ -1653,6 +1592,7 @@ function getInventoryItemCount() {
   ), 0);
 }
 
+// Panel render fonksiyonları: DOM yeniden çizimleri burada toplanıyor.
 function renderStats() {
   els.statsGrid.innerHTML = "";
   Object.entries(upgradeConfig).forEach(([key, upgrade]) => {
@@ -1676,10 +1616,13 @@ function renderEnemyList() {
   enemies.forEach((enemy) => {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "enemy-list-row";
+    row.className = "enemy-list-row bestiary-row";
+    const entry = state.bestiary[enemy.name] || { kills: 0, drops: 0, highestLevel: 0, lastDrop: "" };
     row.innerHTML = `
       <span>${enemy.name}</span>
-      <small>${enemy.animations.attackAlt ? "2 saldırı" : "1 saldırı"} / tıkla test et</small>
+      <small>${entry.kills} öldürme / ${entry.drops} drop / en yüksek ${entry.highestLevel || "-"}</small>
+      <em>Zayıflık: ${enemy.weakness || "Bilinmiyor"}</em>
+      <em>Ganimet: ${enemy.dropInfo || "Genel loot"}${entry.lastDrop ? ` / son: ${entry.lastDrop}` : ""}</em>
     `;
     row.addEventListener("click", () => testEnemy(enemy.name));
     els.enemyList.append(row);
@@ -1750,6 +1693,10 @@ function renderStatusPanel() {
 function renderShop() {
   els.shopList.innerHTML = "";
   if (state.shopStock.length === 0) state.shopStock = createInitialShopStock();
+  const refreshCost = getShopRefreshCost();
+  els.shopRefreshHint.textContent = `Stok yenileme: ${refreshCost} altın`;
+  els.refreshShopButton.disabled = state.gold < refreshCost;
+  els.refreshShopButton.textContent = `Yenile`;
   state.shopStock.forEach((item) => {
     const row = document.createElement("div");
     row.className = "item";
@@ -1762,6 +1709,7 @@ function renderShop() {
       </div>
       <button type="button" ${state.gold < item.cost ? "disabled" : ""}>Al</button>
     `;
+    bindItemPreview(row, item);
     row.querySelector("button").addEventListener("click", () => buyItem(item.stockId));
     els.shopList.append(row);
   });
@@ -1784,9 +1732,10 @@ function renderInventory() {
     const isEquipment = itemType === "equipment";
     const isMaterial = itemType === "material";
     const isEquipped = isEquipment && state.equipped[item.slot]?.uid === item.uid;
+    const locked = isItemLocked(item);
     const levelLocked = !canEquipItem(item);
     const row = document.createElement("div");
-    row.className = `item${isEquipped ? " equipped" : ""}${levelLocked ? " locked" : ""}`;
+    row.className = `item${isEquipped ? " equipped" : ""}${levelLocked ? " locked" : ""}${locked ? " secured" : ""}`;
     row.draggable = true;
     row.dataset.uid = item.uid;
     applyTierStyle(row, item);
@@ -1794,10 +1743,12 @@ function renderInventory() {
     const sourceText = isMaterial ? "Malzeme" : itemType === "potion" ? "Iksir" : isEquipped ? "Kusanildi" : item.source === "drop" ? `Ganimet - ${item.slot}` : item.slot;
     const itemName = item.name;
     const quantityBadge = isMaterial ? `<span class="item-quantity">${getItemQuantity(item)}x</span>` : "";
+    const lockButton = `<button type="button" data-action="lock">${locked ? "Aç" : "Kilitle"}</button>`;
     const actionsHtml = isMaterial
-      ? '<button type="button" data-action="craft">Ekle</button><button type="button" data-action="destroy">Yok Et</button>'
+      ? `<button type="button" data-action="craft" ${locked ? "disabled" : ""}>Ekle</button>${lockButton}<button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`
       : `<button type="button" data-action="primary" ${levelLocked && !isEquipped ? "disabled" : ""}>${primaryText}</button>
-        ${isEquipped ? "" : '<button type="button" data-action="salvage">Parcala</button><button type="button" data-action="destroy">Yok Et</button>'}`;
+        ${lockButton}
+        ${isEquipped ? "" : `<button type="button" data-action="salvage" ${locked ? "disabled" : ""}>Parcala</button><button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`}`;
     row.innerHTML = `
       ${quantityBadge}
       <img class="item-icon" src="${getItemIcon(item)}" alt="" draggable="false" />
@@ -1809,6 +1760,7 @@ function renderInventory() {
         ${actionsHtml}
       </div>
     `;
+    bindItemPreview(row, item);
     row.addEventListener("dragstart", (event) => {
       state.draggingInventoryUid = item.uid;
       event.dataTransfer.setData("text/plain", item.uid);
@@ -1844,6 +1796,7 @@ function renderInventory() {
       }
       equipItem(item.uid);
     });
+    row.querySelector("[data-action='lock']")?.addEventListener("click", () => toggleItemLock(item.uid));
     row.querySelector("[data-action='salvage']")?.addEventListener("click", () => salvageItem(item.uid));
     row.querySelector("[data-action='craft']")?.addEventListener("click", () => addMaterialToNextCraftSlot(item.uid));
     row.querySelector("[data-action='destroy']")?.addEventListener("click", () => destroyItem(item.uid));
@@ -1882,6 +1835,24 @@ function renderCrafting() {
       if (item) clearCraftSlot(index);
     });
     els.craftingList.append(slot);
+  });
+}
+
+function renderRecipeList() {
+  els.recipeList.innerHTML = "";
+  craftRecipes.forEach((recipe) => {
+    const result = itemCatalog.get(recipe.resultId);
+    const row = document.createElement("div");
+    row.className = "recipe-row";
+    if (result) applyTierStyle(row, result);
+    const materialText = recipe.materialIds
+      .map((id) => itemCatalog.get(id)?.name || id)
+      .join(" + ");
+    row.innerHTML = `
+      <strong>${recipe.name}</strong>
+      <small>${materialText}</small>
+    `;
+    els.recipeList.append(row);
   });
 }
 
@@ -1939,6 +1910,7 @@ function renderPanels() {
   renderShop();
   renderInventory();
   renderCrafting();
+  renderRecipeList();
   renderEquipment();
   state.panelsDirty = false;
 }
@@ -1968,6 +1940,7 @@ function render() {
   els.xpText.textContent = `${state.hero.xp} / ${state.hero.xpToNext}`;
   els.xpBar.style.width = `${(state.hero.xp / state.hero.xpToNext) * 100}%`;
   els.goldText.textContent = state.gold;
+  els.soundToggleButton.textContent = state.soundEnabled ? "Ses Açık" : "Ses Kapalı";
   els.pointsText.textContent = "Altınla geliştir";
   const effectText = state.activeEffects.length > 0 ? ` - ${state.activeEffects.length} iksir aktif` : "";
   els.shopHint.textContent = `${Math.round(getHeroDamage())} hasar - ${getHeroAttackSpeed().toFixed(2)}/sn${effectText}`;
