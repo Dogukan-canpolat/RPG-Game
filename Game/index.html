@@ -23,18 +23,6 @@
         <div class="layer layer-8"></div>
         <div class="layer layer-9"></div>
       </div>
-      <div class="auth-character auth-hero" aria-hidden="true">
-        <div class="auth-hero-sprite"></div>
-      </div>
-      <div class="auth-character auth-shopkeeper" aria-hidden="true">
-        <div class="shopkeeper-sprite">
-          <i class="npc-layer npc-skin"></i>
-          <i class="npc-layer npc-hair"></i>
-          <i class="npc-layer npc-corset"></i>
-          <i class="npc-layer npc-skirt"></i>
-          <i class="npc-layer npc-socks"></i>
-        </div>
-      </div>
       <form class="auth-panel" id="authForm">
         <p>RPG Sonsuz Av</p>
         <h1>Karakterine Giriş Yap</h1>
@@ -89,12 +77,20 @@
           <div class="stats-grid" id="statsGrid"></div>
         </section>
 
-        <section class="panel enemy-list-panel">
+        <section class="panel talent-panel">
           <div class="panel-title">
-            <h2>Bestiary</h2>
-            <span>Ansiklopedi</span>
+            <h2>Yetenek Ağacı</h2>
+            <span id="talentPointsText">0 puan</span>
           </div>
-          <div class="enemy-list" id="enemyList"></div>
+          <div class="talent-tree" id="talentTree"></div>
+        </section>
+
+        <section class="panel equipped-summary-panel">
+          <div class="panel-title">
+            <h2>Kuşanım</h2>
+            <span>Giyili set</span>
+          </div>
+          <div class="equipped-summary" id="equippedSummary"></div>
         </section>
       </aside>
 
@@ -113,12 +109,17 @@
         <div class="layer layer-8"></div>
         <div class="layer layer-9"></div>
 
-        <div class="level-roadmap" aria-label="Level yolu">
+        <div class="level-roadmap" aria-label="Stage yolu">
           <div class="roadmap-head">
-            <strong id="roadmapRange">1 - 50</strong>
-            <span id="roadmapStatus">Level 1</span>
+            <strong id="roadmapRange">Stage 1 - 50</strong>
+            <span id="roadmapStatus">Stage 1</span>
           </div>
           <div class="roadmap-grid" id="roadmapGrid"></div>
+        </div>
+
+        <div class="stage-banner" id="stageBanner" hidden>
+          <strong id="stageBannerTitle">Stage Geçildi</strong>
+          <span id="stageBannerText">Sıradaki bölüme ilerleniyor.</span>
         </div>
 
         <div class="combatants">
@@ -162,7 +163,8 @@
           <button type="button" data-panel-tab="status">Durum</button>
           <button type="button" class="active" data-panel-tab="shop">Dükkan</button>
           <button type="button" data-panel-tab="craft">Birleştir</button>
-          <button type="button" data-panel-tab="equipment">Ekipman</button>
+          <button type="button" data-panel-tab="bestiary">Bestiary</button>
+          <button type="button" data-panel-tab="leaderboard">Liderlik</button>
         </nav>
 
         <section class="panel right-tab-panel" data-panel-view="status">
@@ -203,20 +205,6 @@
           <div class="shop-list" id="shopList"></div>
         </section>
 
-        <section class="panel right-tab-panel" data-panel-view="equipment">
-          <div class="panel-title">
-            <h2>Ekipman</h2>
-            <span>Item sürükle</span>
-          </div>
-          <div class="equipment-grid" id="equipmentGrid">
-            <div class="equip-slot" data-slot="weapon"><span>Silah</span><strong>Boş</strong></div>
-            <div class="equip-slot" data-slot="armor"><span>Zırh</span><strong>Boş</strong></div>
-            <div class="equip-slot" data-slot="helmet"><span>Başlık</span><strong>Boş</strong></div>
-            <div class="equip-slot" data-slot="gloves"><span>Eldiven</span><strong>Boş</strong></div>
-            <div class="equip-slot" data-slot="ring"><span>Yüzük</span><strong>Boş</strong></div>
-          </div>
-        </section>
-
         <section class="panel crafting-panel right-tab-panel" data-panel-view="craft">
           <div class="panel-title">
             <h2>Birleştir</h2>
@@ -224,7 +212,23 @@
           </div>
           <div class="crafting-list" id="craftingList"></div>
           <div class="recipe-list" id="recipeList"></div>
-          <button type="button" class="craft-button" id="craftButton">Tarifi Birleştir</button>
+          <button type="button" class="craft-button" id="craftButton">Rastgele Üret</button>
+        </section>
+
+        <section class="panel right-tab-panel" data-panel-view="bestiary">
+          <div class="panel-title">
+            <h2>Bestiary</h2>
+            <span>Ansiklopedi</span>
+          </div>
+          <div class="enemy-list" id="enemyList"></div>
+        </section>
+
+        <section class="panel right-tab-panel" data-panel-view="leaderboard">
+          <div class="panel-title">
+            <h2>Liderlik</h2>
+            <span>Hesap gücü</span>
+          </div>
+          <div class="leaderboard-list" id="leaderboardList"></div>
         </section>
 
         <section class="panel inventory-panel">

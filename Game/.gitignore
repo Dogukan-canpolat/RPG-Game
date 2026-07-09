@@ -1,2 +1,6 @@
 node_modules/
 data/users.json
+data/users.backup-before-sqlite.json
+data/*.db
+data/*.db-shm
+data/*.db-wal

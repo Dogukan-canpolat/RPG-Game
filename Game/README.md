@@ -1,6 +1,6 @@
 # RPG Sonsuz Av
 
-`RPG Sonsuz Av`, tarayıcıda çalışan 2D idle/action RPG prototipidir. Oyun vanilla HTML, CSS ve JavaScript ile yazılmıştır. Sunucu tarafında Node.js kullanılır; kullanıcı ve karakter kayıtları webde değil, proje klasöründeki yerel JSON veritabanında tutulur.
+`RPG Sonsuz Av`, tarayıcıda çalışan 2D idle/action RPG prototipidir. Oyun vanilla HTML, CSS ve JavaScript ile yazılmıştır. Sunucu tarafında Node.js kullanılır; kullanıcı ve karakter kayıtları webde değil, proje klasöründeki yerel SQLite veritabanında tutulur.
 
 ## Oyunun Amacı
 
@@ -12,7 +12,7 @@ Ana döngü:
 2. Karakter düşmanlarla otomatik savaşır.
 3. Düşman öldürerek XP, altın ve düşük ihtimalle item kazan.
 4. Altınla karakter özelliklerini ve dükkan eşyalarını geliştir.
-5. Itemleri giy, kilitle, parçala, yok et veya tariflerle craft yap.
+5. Itemleri giy, kilitle, parçala, yok et veya parçaların tierine göre craft yap.
 6. XP eşiğini doldurdukça level atla ve daha yüksek savaş seviyelerine geç.
 7. Bestiary üzerinden düşman geçmişini, öldürme sayısını ve drop bilgisini takip et.
 
@@ -51,18 +51,35 @@ Stop-Process -Id <PID>
 
 ## Kayıt ve Veritabanı
 
-Kayıt dosyası:
+Ana kayıt veritabanı:
 
 ```text
-data/users.json
+data/game.db
 ```
+
+İlk SQLite geçişinde eski JSON kaydı otomatik yedeklenir:
+
+```text
+data/users.backup-before-sqlite.json
+```
+
+Eski `data/users.json` dosyası artık ana veritabanı değildir; geçiş ve geri dönüş güvenliği için yerinde bırakılır.
+
+SQLite tablo yapısı:
+
+- `users`: kullanıcı adı, şifre salt/hash, oluşturulma ve güncellenme tarihleri
+- `characters`: karakter özeti, stage durumu, altın, ayarlar ve tam `saveData` JSON kaydı
+- `inventory_items`: envanterdeki itemler, adet, kilit, kaynak ve item JSON verisi
+- `equipped_items`: giyili ekipman slotları
+- `bestiary`: düşman öldürme/drop istatistikleri
+- `shop_stock`: kullanıcıya özel dükkan stoğu
 
 Kaydedilen ana veriler:
 
 - Kullanıcı adı ve şifre hash bilgisi
 - Karakter leveli, XP, can, hasar ve saldırı hızı
 - Altın miktarı
-- Açık savaş leveli ve seçili savaş leveli
+- Açık stage, seçili stage ve stage içi düşman ilerlemesi
 - Envanter sırası, item kilitleri, item miktarları
 - Giyili ekipmanlar
 - Dükkan stoğu
@@ -71,7 +88,7 @@ Kaydedilen ana veriler:
 - Ses ayarı
 - Mevcut düşman durumu
 
-Şifre düz metin saklanmaz. `server.js`, salt kullanılan SHA-256 hash üretir ve kullanıcı verisini yerel JSON dosyasına yazar.
+Şifre düz metin saklanmaz. `server.js`, salt kullanılan SHA-256 hash üretir ve kullanıcı verisini yerel SQLite veritabanına yazar.
 
 ## Giriş Ekranı
 
@@ -105,31 +122,38 @@ Orta alanda:
 - Savaş sahnesi
 - Karakter ve düşman animasyonları
 - İnce can barları
-- Level yol haritası
+- Stage yol haritası
 
 Sağ panelde sekmeler:
 
 - `Durum`: Karakterin özet bilgileri ve idle görünümü
 - `Dükkan`: Satın alma, stok yenileme ve dükkan görevlisi
-- `Birleştir`: Craft slotları, tarif listesi ve envanter
-- `Ekipman`: Giyili item paneli ve envanter
+- `Birleştir`: Craft slotları, rastgele üretim özeti ve envanter
+- `Bestiary`: Düşman ansiklopedisi ve test listesi
+- `Liderlik`: Hesapların level ve güç sıralaması
 
-## Level ve XP Sistemi
+## Stage, Level ve XP Sistemi
 
-Level sistemi 1'den başlayıp teorik olarak sonsuza kadar devam eder. Yol haritası 50'lik bloklarla gösterilir:
+Oyun ilerleyişi artık stage sistemiyle yürür. Stage'ler 1'den başlayıp teorik olarak sonsuza kadar devam eder. Yol haritası 50'lik bloklarla gösterilir:
 
 ```text
-1-50, 50-100, 100-150, ...
+Stage 1-50, Stage 50-100, Stage 100-150, ...
 ```
 
 Kurallar:
 
+- Her stage içinde belirli sayıda düşman vardır.
+- Stage ilerledikçe gereken düşman sayısı ve düşman gücü artar.
+- Stage içindeki tüm düşmanlar ölünce ekranda `Stage Geçildi` bildirimi çıkar.
+- Stage geçilince karakter kısa süre yürür, arka plan hareket eder ve sonraki stage savaşı başlar.
+- Stage geçiş molasında karakter az miktarda can yeniler; tek tek düşman öldürmede can yenilenmez.
+- Stage geçilemeden ölünürse aynı stage en baştan başlar.
+- Açılmış stage'lere tıklanarak eski stage'ler tekrar oynanabilir.
 - XP eşiği her levelde artar.
 - XP dolunca karakter otomatik level atlar.
-- Level atlayınca savaş leveli de karakter leveline taşınır.
-- Açılmış levellere tıklanarak eski seviyelerde savaşılabilir.
+- Karakter leveli stage kilidini otomatik açmaz; stage ilerlemesi stage geçerek açılır.
 - Karakter kendi levelinden düşük düşmanlarla savaşırsa XP, altın ve drop verimi kademeli düşer.
-- Ölünce XP kaybı yaşanır; düşük savaş levelinde ölünürse kayıp daha az olur.
+- Ölünce XP kaybı yaşanır; düşük stage alanında ölünürse kayıp daha az olur.
 
 ## Savaş Sistemi
 
@@ -146,7 +170,7 @@ Karakter ölünce:
 - 3 saniyelik sayaç gösterilir.
 - Karakter tam canla yeniden doğar.
 - Altın azalmaz.
-- Düşmanın canı sıfırlanmaz; böylece aynı bölümü bitirmek mümkün olur.
+- Aynı stage en baştan başlar; stage içindeki öldürme sayacı sıfırlanır.
 - XP cezası uygulanır.
 
 ## Düşmanlar ve Bestiary
@@ -176,12 +200,13 @@ Sol paneldeki düşman listesine tıklayarak seçilen düşmanı test amaçlı s
 
 ## Item ve Tier Sistemi
 
-Oyunda iki item paketi tamamen katalog havuzuna eklenmiştir:
+Oyunda üç item paketi katalog havuzuna eklenmiştir:
 
 - `assets/items/`: 72 PNG
 - `assets/items2/`: 72 PNG
+- `assets/items3/`: 35 PNG
 
-Toplam katalogda ekipman, iksir ve malzemelerle birlikte 178 item bulunur.
+Toplam katalogda ekipman, iksir ve malzemelerle birlikte 213 item bulunur.
 
 Tier sistemi:
 
@@ -193,6 +218,7 @@ Tier sistemi:
 | T4 | Destansı | Pahalı ve zor bulunan itemler |
 | T5 | Efsanevi | Çok güçlü, çok nadir |
 | T6 | Çok Efsanevi | Aşırı nadir, yüksek seviye hedef itemleri |
+| T7 | İlahi | 400+ level sonrası açılan, en zor bulunan ve en güçlü itemler |
 
 Tier arttıkça:
 
@@ -202,6 +228,8 @@ Tier arttıkça:
 - Level gereksinimi artar.
 - Parçalama sonucu daha değerli malzeme verir.
 
+T7 itemler 405+ level gerektirir, yalnızca 400+ savaş/karakter bandında havuza girer ve drop ağırlığı diğer tierlere göre aşırı düşüktür.
+
 ## Envanter
 
 Envanterdeki itemler kare kartlar halinde görünür. Kartlarda ikon, isim, tier, level gereksinimi, stat bilgisi ve miktar rozeti bulunur.
@@ -210,7 +238,7 @@ Envanterdeki itemler kare kartlar halinde görünür. Kartlarda ikon, isim, tier
 
 - Itemleri sürükleyerek envanter sırasını değiştirebilirsin.
 - Ekipmanı `Giy` ile takabilir, `Çıkar` ile çıkarabilirsin.
-- Ekipman paneline sürükleyerek de giydirebilirsin.
+- Sol paneldeki `Kuşanım` kartına sürükleyerek de giydirebilirsin.
 - Level gereksinimi yüksek itemler giyilemez.
 - Materyaller miktarlı stack olarak tutulur.
 
@@ -247,10 +275,11 @@ Kurallar:
 - Düşük tier itemler daha erişilebilirdir.
 - T4 ve üstü itemler ciddi altın ister.
 - T6 itemler yüksek level kapısına bağlıdır.
+- T7 itemler 400+ level kapısına bağlıdır ve dükkan fiyatları çok yüksektir.
 - İksirler ucuz tüketim eşyası değildir; satın almak planlama ister.
 - Item satın alınınca yerine daha pahalı ve çoğunlukla daha iyi yeni item gelir.
 - `Yenile` düğmesiyle belli miktar altın ödeyerek stok tamamen değiştirilebilir.
-- Yenileme maliyeti karakter/savaş leveline göre artar.
+- Yenileme maliyeti karakter leveli ve aktif stage'e göre artar.
 
 ## İksir Sistemi
 
@@ -287,21 +316,18 @@ Tier mantığı:
 - Düşük tier itemler düşük tier malzeme bırakır.
 - Yüksek tier itemler gümüş, altın ve platin malzemelere geçer.
 - T6 itemler ağırlıklı olarak platin ve altın malzemeler verir.
+- T7 itemler en yüksek miktarda platin ve altın malzeme verir.
 
 ## Craft Sistemi
 
-Craft artık rastgele üretim değildir. Belirli tarifler vardır ve doğru 3 malzemeyi slotlara koymak gerekir.
+Craft sistemi oyuncunun slotlara sürüklediği parçaların tier ortalamasına göre rastgele item üretir. Parçalar otomatik eklenmez; oyuncu hangi malzemeyi kullanacağını kendisi seçer.
 
-Mevcut tarifler:
+Üretim sonucu:
 
-| Tarif | Malzemeler | Sonuç |
-| --- | --- | --- |
-| Çırak Kılıcı | Dal Parçası + Bakır Cevheri + Bakır Cevheri | Çırak Kılıcı |
-| Köz Asası | Dal Parçası + Bakır Külçesi + Demir Cevheri | Köz Asası |
-| Fırtına Baltası | Dal Parçası + Demir Külçesi + Gümüş Cevheri | Fırtına Baltası |
-| Ayna Kalkanı | Demir Külçesi + Gümüş Külçesi + Altın Cevheri | Ayna Kalkanı |
-| Gece Orağı | Altın Külçesi + Platin Cevheri + Platin Külçesi | Gece Orağı |
-| Yaratıcı Tacı | Platin Külçesi + Platin Külçesi + Altın Külçesi | Yaratıcı Tacı |
+- Slotlardaki 3 parçanın ortalama tier seviyesine bakılır.
+- Sonuç çoğunlukla bu ortalama tierden gelir.
+- Düşük ihtimalle bir tier aşağı veya yukarı kayabilir.
+- T7 üretim için T7 ağırlıklı malzeme kullanmak gerekir.
 
 Craft kuralları:
 
@@ -319,6 +345,7 @@ Ses efektleri:
 - Hasar alma/verme
 - Item düşüşü
 - Level atlama
+- Stage geçme
 
 Header'daki `Ses Açık / Ses Kapalı` düğmesiyle sesler kapatılıp açılabilir. Ayar kayda yazılır.
 
@@ -326,6 +353,7 @@ Toast bildirimleri sağ altta görünür:
 
 - Nadir item düştü
 - Level açıldı
+- Stage geçildi
 - Dükkan yenilendi
 - Craft sonucu oluştu
 
@@ -335,6 +363,7 @@ Toast bildirimleri sağ altta görünür:
 Game/
   assets/
     background-layers/   Savaş alanı arka plan katmanları
+    boots/               Bot ekipman ikonları
     characters/          Ana karakter sprite dosyaları
     enemies/             Düşman sprite dosyaları
     items/               İlk item ikon paketi
@@ -342,13 +371,17 @@ Game/
     materials/           Craft/parçalama malzemeleri
     monsters/            Eski/ek varlık dosyaları
     npc/                 Dükkan görevlisi görselleri
+    ui/                  Kart ve panel arka plan dokuları
     video/               Arka plan video varlıkları
   data/
-    users.json           Yerel kullanıcı ve karakter veritabanı
+    game.db              Yerel SQLite kullanıcı ve karakter veritabanı
+    users.json           Eski JSON kayıt dosyası, SQLite geçişinden sonra yedek amaçlı kalır
+    users.backup-before-sqlite.json
+                         SQLite geçişinden önce alınan otomatik JSON yedeği
   src/
     data/
       enemies.js         Düşman tanımları, animasyonlar, zayıflık ve drop bilgileri
-      items.js           Item katalogları, tier ayarları, malzemeler ve craft tarifleri
+      items.js           Item katalogları, tier ayarları, malzemeler ve craft dengesi
     systems/
       audio.js           Web Audio tabanlı ses sistemi
       combat.js          Savaş/sahne yardımcı hesapları
@@ -379,7 +412,7 @@ POST /api/save
 - `index.html`, `src/game.js` dosyasını ES module olarak yükler.
 - `package.json` CommonJS kalır çünkü `server.js` Node tarafında `require` kullanır.
 - Düşman animasyon ayarları `src/data/enemies.js` içindedir.
-- Item, tier, malzeme ve tarif ayarları `src/data/items.js` içindedir.
+- Item, tier, malzeme ve craft ayarları `src/data/items.js` içindedir.
 - Ekonomi formülleri `src/systems/economy.js` içinde tutulur.
 - Yeni sistem eklerken mümkünse `game.js` içine büyük data blokları koyma; data ve saf helperları ilgili modüle taşı.
 
@@ -403,7 +436,7 @@ node --check server.js
 
 - Bestiary ödülleri: belirli öldürme sayılarında kalıcı bonuslar
 - Düşman aileleri ve element sistemi
-- Craft tariflerini UI üzerinden filtreleme
+- Craft sonucunu önizleyen daha detaylı olasılık paneli
 - Item yükseltme ve yeniden dövme sistemi
 - Boss level blokları
 - Nadir drop için özel ekran efekti

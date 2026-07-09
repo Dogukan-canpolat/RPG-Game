@@ -2,7 +2,6 @@ import { enemies, enemyPosition } from "./data/enemies.js";
 import {
   allLootItems,
   allShopItems,
-  craftRecipes,
   itemCatalog,
   materialItems,
   salvageMaterialsByTier,
@@ -42,6 +41,34 @@ const {
   getItemQuantity,
 } = createItemHelpers(itemCatalog, tierConfig);
 
+const STAGE_TRAVEL_MS = 2600;
+const STAGE_CLEAR_MESSAGE_MS = 1900;
+const STAGE_CLEAR_HOLD_MS = 950;
+const ENEMY_SPAWN_DISTANCE = 2.1;
+const HERO_SHOOT_DISTANCE = 0.72;
+
+function getStageEnemyTarget(stageNumber) {
+  const safeStage = Math.max(1, Number(stageNumber) || 1);
+  return Math.min(8, 3 + Math.floor(Math.sqrt(safeStage - 1) / 2));
+}
+
+function createStageState(stageNumber = 1, overrides = {}) {
+  const current = Math.max(1, Number(stageNumber) || 1);
+  const enemiesRequired = getStageEnemyTarget(current);
+  return {
+    current,
+    enemiesDefeated: clamp(Number(overrides.enemiesDefeated) || 0, 0, enemiesRequired),
+    enemiesRequired,
+    phase: overrides.phase || "travel",
+    phaseUntil: Number(overrides.phaseUntil) || 0,
+    pendingStage: Number(overrides.pendingStage) || 0,
+    messageTitle: overrides.messageTitle || "",
+    messageText: overrides.messageText || "",
+    messageUntil: Number(overrides.messageUntil) || 0,
+    messageType: overrides.messageType || "info",
+  };
+}
+
 const state = {
   session: {
     active: false,
@@ -62,16 +89,24 @@ const state = {
     maxHealth: 120,
     damage: 15,
     attackSpeed: 1.15,
+    skillPoints: 0,
     stats: {
       vitality: 0,
       power: 0,
       haste: 0,
+    },
+    talents: {
+      criticalDamage: 0,
+      healthBonus: 0,
+      shopDiscount: 0,
+      luck: 0,
     },
   },
   enemy: null,
   wave: 1,
   maxUnlockedLevel: 1,
   roadmapStart: 1,
+  stage: createStageState(1),
   inventory: [],
   equipped: {},
   shopStock: [],
@@ -79,6 +114,8 @@ const state = {
   activePanel: "shop",
   activeEffects: [],
   bestiary: {},
+  leaderboard: [],
+  leaderboardFetchedAt: 0,
   soundEnabled: true,
   killsSinceLoot: 0,
   lastEnemyName: "",
@@ -86,9 +123,12 @@ const state = {
   lastEnemyAttackAt: 0,
   heroDownUntil: 0,
   lastFrameAt: 0,
+  lastWallClockAt: Date.now(),
   draggingInventoryUid: "",
   panelsDirty: true,
 };
+
+let heroShotTimer = 0;
 
 const audioEngine = createAudioEngine(() => state.soundEnabled);
 
@@ -135,6 +175,49 @@ const upgradeConfig = {
   },
 };
 
+const talentConfig = {
+  criticalDamage: {
+    label: "Kritik Hasar",
+    icon: "CR",
+    max: 20,
+    perPoint: 0.015,
+    description: "Kritik vuruş hasarını çok az artırır.",
+    format(level) {
+      return `+${Math.round(level * this.perPoint * 100)}%`;
+    },
+  },
+  healthBonus: {
+    label: "Can Bonusu",
+    icon: "HP",
+    max: 30,
+    perPoint: 5,
+    description: "Maksimum cana küçük ve sabit bonus verir.",
+    format(level) {
+      return `+${level * this.perPoint} can`;
+    },
+  },
+  shopDiscount: {
+    label: "Dükkan İndirimi",
+    icon: "MK",
+    max: 20,
+    perPoint: 0.004,
+    description: "Dükkan ve stok yenileme fiyatını az düşürür.",
+    format(level) {
+      return `-${(level * this.perPoint * 100).toFixed(1)}%`;
+    },
+  },
+  luck: {
+    label: "Şans",
+    icon: "LK",
+    max: 25,
+    perPoint: 0.006,
+    description: "Ganimet düşme ihtimalini hafif artırır.",
+    format(level) {
+      return `+${(level * this.perPoint * 100).toFixed(1)}%`;
+    },
+  },
+};
+
 // Item katalogları src/data/items.js modülünden gelir.
 
 // Kullanıcı oturumu, kayıt verisi ve eski kayıt uyumluluğu.
@@ -153,6 +236,13 @@ async function apiRequest(path, payload) {
   return data;
 }
 
+async function apiGet(path) {
+  const response = await fetch(path, { headers: { Accept: "application/json" } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Sunucu istegi basarisiz.");
+  return data;
+}
+
 function createSaveData() {
   return {
     gold: state.gold,
@@ -160,6 +250,7 @@ function createSaveData() {
     hero: structuredClone(state.hero),
     wave: state.wave,
     maxUnlockedLevel: state.maxUnlockedLevel,
+    stage: serializeStageState(),
     inventory: structuredClone(state.inventory),
     equipped: structuredClone(state.equipped),
     shopStock: structuredClone(state.shopStock),
@@ -170,6 +261,27 @@ function createSaveData() {
     lastEnemyName: state.lastEnemyName,
     enemy: state.enemy ? serializeEnemy(state.enemy) : null,
     savedAt: new Date().toISOString(),
+  };
+}
+
+function serializeStageState() {
+  if (state.stage.phase === "clear" && state.stage.pendingStage) {
+    const nextStage = Math.max(1, Number(state.stage.pendingStage) || state.stage.current + 1);
+    return {
+      current: nextStage,
+      enemiesDefeated: 0,
+      enemiesRequired: getStageEnemyTarget(nextStage),
+      phase: "travel",
+      pendingStage: 0,
+    };
+  }
+
+  return {
+    current: state.stage.current,
+    enemiesDefeated: state.stage.enemiesDefeated,
+    enemiesRequired: state.stage.enemiesRequired,
+    phase: state.stage.phase,
+    pendingStage: state.stage.pendingStage || 0,
   };
 }
 
@@ -284,39 +396,58 @@ function compactMaterialStacks() {
 
 function normalizeVisibleText(value) {
   if (typeof value !== "string") return value;
-  const replacements = [
-    ["ZÄ±rh", "Zırh"],
-    ["SÄ±radan", "Sıradan"],
-    ["BirleÅŸik", "Birleşik"],
-    ["DiÅŸ", "Diş"],
-    ["BoÅŸluk", "Boşluk"],
-    ["TacÄ±", "Tacı"],
-    ["YayÄ±", "Yayı"],
-    ["BaÅŸlÄ±k", "Başlık"],
-    ["YÃ¼zÃ¼k", "Yüzük"],
-    ["GÃ¼Ã§", "Güç"],
-    ["Ä°ksiri", "İksiri"],
-    ["HÄ±z", "Hız"],
-    ["MuhafÄ±z", "Muhafız"],
-    ["KÃ¶z", "Köz"],
-    ["GÃ¶lge", "Gölge"],
-    ["KiriÅŸi", "Kirişi"],
-    ["HalkasÄ±", "Halkası"],
-    ["KavrayÄ±ÅŸ", "Kavrayış"],
-    ["BekÃ§i", "Bekçi"],
-    ["VahÅŸi", "Vahşi"],
-    ["Ã‡evik", "Çevik"],
-  ];
-
-  return replacements.reduce((text, [from, to]) => text.replaceAll(from, to), value);
+  const cp1252Map = new Map([
+    [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84],
+    [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88],
+    [0x2030, 0x89], [0x0160, 0x8a], [0x2039, 0x8b], [0x0152, 0x8c],
+    [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92], [0x201c, 0x93],
+    [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+    [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b],
+    [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
+  ]);
+  const badPattern = /[\u00c2\u00c3\u00c4\u00c5\u00e2\ufffd]/g;
+  const score = (text) => (text.match(badPattern) || []).length;
+  const toCp1252Bytes = (text) => {
+    const bytes = [];
+    for (const char of text) {
+      const code = char.codePointAt(0);
+      if (code <= 255) bytes.push(code);
+      else if (cp1252Map.has(code)) bytes.push(cp1252Map.get(code));
+      else return null;
+    }
+    return Uint8Array.from(bytes);
+  };
+  let best = value;
+  let bestScore = score(best);
+  for (let index = 0; index < 4 && bestScore > 0; index += 1) {
+    const bytes = toCp1252Bytes(best);
+    if (!bytes) break;
+    const next = new TextDecoder("utf-8").decode(bytes);
+    const nextScore = score(next);
+    if (next === best || nextScore > bestScore) break;
+    best = next;
+    bestScore = nextScore;
+  }
+  return best;
 }
-
 function normalizeSavedItem(item) {
   if (!item || typeof item !== "object") return item;
   const catalogItem = itemCatalog.get(item.id);
+  if (catalogItem) {
+    return {
+      ...item,
+      ...catalogItem,
+      uid: item.uid,
+      stockId: item.stockId,
+      quantity: item.quantity,
+      source: item.source,
+      locked: item.locked,
+      cost: item.cost ?? catalogItem.cost,
+    };
+  }
   return {
     ...item,
-    name: catalogItem?.name || normalizeVisibleText(item.name),
+    name: normalizeVisibleText(item.name),
   };
 }
 
@@ -342,12 +473,17 @@ function createStockItem(item) {
   return { ...item, stockId: crypto.randomUUID() };
 }
 
-// Dükkan havuzu: eski sabit itemler + yeni paket itemleri, T6 için geç seviye kapısı.
+// Dükkan havuzu: sabit itemler + paket itemleri, yüksek tierler için seviye kapısı.
 function getShopTemplatePool() {
   const heroLevel = Math.max(1, Number(state.hero.level) || 1);
   return allShopItems
     .filter((item) => getItemType(item) !== "material")
-    .filter((item) => getItemTier(item) < 6 || heroLevel >= Math.max(35, getItemRequiredLevel(item) - 10));
+    .filter((item) => {
+      const tier = getItemTier(item);
+      if (tier >= 7) return heroLevel >= Math.max(400, getItemRequiredLevel(item) - 10);
+      if (tier >= 6) return heroLevel >= Math.max(35, getItemRequiredLevel(item) - 10);
+      return true;
+    });
 }
 
 function chooseShopTemplate(excludedIds = new Set()) {
@@ -390,6 +526,7 @@ function getMinimumShopCost(item) {
     4: 11000,
     5: 28000,
     6: 95000,
+    7: 650000,
   }[tier] || 260;
   const levelPressure = Math.max(0, getItemRequiredLevel(item) - 1) * 145;
   const wavePressure = Math.max(0, state.wave - 1) * 55;
@@ -410,48 +547,62 @@ function randomChoice(entries) {
 
 function getGeneratedIcon(slot, tier) {
   const icons = {
-    weapon: ["assets/items/Item__16.png", "assets/items/Item__17.png", "assets/items/Item__19.png", "assets/items/Item__18.png", "assets/items/Item__23.png", "assets/items2/Item_23.png"],
-    armor: ["assets/items/Item__60.png", "assets/items/Item__24.png", "assets/items/Item__59.png", "assets/items/Item__58.png", "assets/items/Item__58.png", "assets/items2/Item_45.png"],
-    helmet: ["assets/items/Item__55.png", "assets/items/Item__44.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items2/Item_38.png"],
-    gloves: ["assets/items/Item__61.png", "assets/items/Item__62.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items2/Item_43.png"],
-    ring: ["assets/items/Item__34.png", "assets/items/Item__40.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items2/Item_46.png"],
+    weapon: ["assets/items/Item__16.png", "assets/items/Item__17.png", "assets/items/Item__19.png", "assets/items/Item__18.png", "assets/items/Item__23.png", "assets/items2/Item_23.png", "assets/items3/sword27.png"],
+    armor: ["assets/items/Item__60.png", "assets/items/Item__24.png", "assets/items/Item__59.png", "assets/items/Item__58.png", "assets/items/Item__58.png", "assets/items2/Item_45.png", "assets/items3/staff37.png"],
+    helmet: ["assets/items/Item__55.png", "assets/items/Item__44.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items2/Item_38.png", "assets/items3/staff35.png"],
+    gloves: ["assets/items/Item__61.png", "assets/items/Item__62.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items2/Item_43.png", "assets/items3/staff34.png"],
+    ring: ["assets/items/Item__34.png", "assets/items/Item__40.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items2/Item_46.png", "assets/items3/staff33.png"],
+    boots: ["assets/items/Item__60.png", "assets/items/Item__24.png", "assets/items/Item__59.png", "assets/items/Item__58.png", "assets/items/Item__58.png", "assets/items2/Item_45.png", "assets/items3/staff37.png"],
   };
   return icons[slot]?.[Math.max(0, tier - 1)] || "assets/items/Item__00.png";
 }
 
+function getGeneratedRequiredLevel(tier) {
+  const levelBase = { 1: 1, 2: 8, 3: 24, 4: 65, 5: 140, 6: 275, 7: 405 };
+  return levelBase[tier] || 1;
+}
+
+function getGeneratedTierPower(tier) {
+  const powerBase = { 1: 10, 2: 24, 3: 52, 4: 105, 5: 215, 6: 420, 7: 820 };
+  return powerBase[tier] || 10;
+}
+
 function createGeneratedEquipment(tier, source = "shop", previousCost = 80) {
   const slot = randomChoice(Object.keys(slotLabels));
-  const statScale = tier * 8 + Math.round(state.wave * 1.8);
+  const statScale = getGeneratedTierPower(tier) + Math.round(state.wave * (tier >= 6 ? 4 : 1.8));
+  const generatedRequiredLevel = getGeneratedRequiredLevel(tier);
   const item = {
     id: `${source}-${slot}-${tier}-${crypto.randomUUID()}`,
     name: `${tierConfig[tier].label} ${slotLabels[slot]}`,
     type: "equipment",
     slot,
     tier,
-    requiredLevel: Math.max(1, tier * 2 - 1),
-    cost: Math.round(previousCost * 2.15 + getMinimumShopCost({ tier, type: "equipment", requiredLevel: Math.max(1, tier * 2 - 1) }) + state.wave * 90),
+    requiredLevel: generatedRequiredLevel,
+    cost: Math.round(previousCost * 2.15 + getMinimumShopCost({ tier, type: "equipment", requiredLevel: generatedRequiredLevel }) + state.wave * 90),
     icon: getGeneratedIcon(slot, tier),
   };
 
   if (slot === "weapon") {
-    item.damage = statScale + tier * 5;
-    item.attackSpeed = Number((0.03 + tier * 0.035).toFixed(2));
-  } else if (slot === "armor" || slot === "helmet") {
-    item.maxHealth = statScale * 7 + tier * 20;
-    if (tier >= 4) item.damage = tier * 4;
-  } else if (slot === "gloves") {
     item.damage = statScale;
-    item.attackSpeed = Number((0.04 + tier * 0.03).toFixed(2));
+    item.attackSpeed = Number((0.04 + tier * 0.035).toFixed(2));
+  } else if (slot === "armor" || slot === "helmet") {
+    item.maxHealth = slot === "armor" ? Math.round(statScale * 4.2) : Math.round(statScale * 2.55);
+    if (tier >= 4) item.damage = Math.round(statScale * 0.2);
+  } else if (slot === "gloves") {
+    item.damage = Math.round(statScale * 0.62);
+    item.attackSpeed = Number((0.05 + tier * 0.035).toFixed(2));
   } else {
-    item.damage = Math.round(statScale * 0.8);
-    item.maxHealth = statScale * 3;
+    item.damage = Math.round(statScale * 0.46);
+    item.maxHealth = Math.round(statScale * 1.65);
+    if (tier >= 5) item.attackSpeed = Number((0.08 + tier * 0.022).toFixed(2));
   }
 
   return item;
 }
 
 function createReplacementShopItem(previousItem) {
-  const nextTier = Math.min(6, Math.max(getItemTier(previousItem), getItemTier(previousItem) + (Math.random() > 0.35 ? 1 : 0)));
+  const maxReplacementTier = state.hero.level >= 400 ? 7 : 6;
+  const nextTier = Math.min(maxReplacementTier, Math.max(getItemTier(previousItem), getItemTier(previousItem) + (Math.random() > 0.35 ? 1 : 0)));
   const templatePool = getShopTemplatePool().filter((item) => getItemTier(item) >= nextTier && getItemType(item) === getItemType(previousItem));
   const template = templatePool.length > 0 ? randomChoice(templatePool) : null;
   const item = template ? { ...template } : createGeneratedEquipment(nextTier, "shop", previousItem.cost || 100);
@@ -495,7 +646,10 @@ function refreshShopStock(stock) {
 function loadSaveData(saveData) {
   if (!saveData) {
     resetCharacterState();
-    spawnEnemy();
+    beginStage(1, {
+      title: "Stage 1",
+      text: "İlk yolculuk başlıyor.",
+    });
     return;
   }
 
@@ -510,15 +664,32 @@ function loadSaveData(saveData) {
       haste: 0,
       ...(saveData.hero?.stats || {}),
     },
+    talents: {
+      criticalDamage: 0,
+      healthBonus: 0,
+      shopDiscount: 0,
+      luck: 0,
+      ...(saveData.hero?.talents || {}),
+    },
   };
+  const hasSavedSkillPoints = Object.prototype.hasOwnProperty.call(saveData.hero || {}, "skillPoints");
+  state.hero.skillPoints = Math.max(0, Number(saveData.hero?.skillPoints) || 0);
   delete state.hero.statPoints;
+  clampTalentLevels();
   state.hero.level = Math.max(1, Number(state.hero.level) || 1);
+  if (!hasSavedSkillPoints) {
+    const spentTalentPoints = Object.values(state.hero.talents).reduce((sum, level) => sum + (Number(level) || 0), 0);
+    state.hero.skillPoints = Math.max(0, state.hero.level - 1 - spentTalentPoints);
+  }
   state.hero.xp = Math.max(0, Number(state.hero.xp) || 0);
   state.hero.xpToNext = getXpForNextLevel(state.hero.level);
-  state.wave = Number(saveData.wave) || 1;
-  state.maxUnlockedLevel = Math.max(Number(saveData.maxUnlockedLevel) || 1, state.hero.level, state.wave || 1);
-  state.wave = Math.max(1, Math.min(state.wave, state.maxUnlockedLevel));
-  state.roadmapStart = getRoadmapBlockStart(state.wave);
+  const savedStageNumber = Number(saveData.stage?.current || saveData.wave) || 1;
+  state.maxUnlockedLevel = Math.max(Number(saveData.maxUnlockedLevel) || 1, savedStageNumber);
+  state.stage = createStageState(Math.min(savedStageNumber, state.maxUnlockedLevel), saveData.stage || {});
+  state.stage.current = Math.max(1, Math.min(state.stage.current, state.maxUnlockedLevel));
+  state.stage.enemiesRequired = getStageEnemyTarget(state.stage.current);
+  state.stage.enemiesDefeated = clamp(state.stage.enemiesDefeated, 0, Math.max(0, state.stage.enemiesRequired - 1));
+  syncStageAlias();
   state.inventory = Array.isArray(saveData.inventory) ? saveData.inventory : [];
   migrateSavedGemsToInventory(Number(saveData.gems) || 0);
   state.gems = 0;
@@ -528,11 +699,19 @@ function loadSaveData(saveData) {
     : createInitialShopStock();
   state.activeEffects = restoreActiveEffects(saveData.activeEffects);
   state.bestiary = saveData.bestiary && typeof saveData.bestiary === "object" ? saveData.bestiary : {};
+  state.leaderboard = [];
+  state.leaderboardFetchedAt = 0;
   state.soundEnabled = saveData.soundEnabled !== false;
   state.killsSinceLoot = Number(saveData.killsSinceLoot) || 0;
   state.lastEnemyName = saveData.lastEnemyName || "";
-  state.enemy = restoreEnemy(saveData.enemy);
-  if (!state.enemy) spawnEnemy();
+  state.enemy = state.stage.phase === "combat" ? restoreEnemy(saveData.enemy) : null;
+  if (!state.enemy) {
+    beginStageTravel({
+      title: `Stage ${state.stage.current}`,
+      text: `${state.stage.enemiesDefeated}/${state.stage.enemiesRequired} düşman temizlendi. Yolculuk sürüyor.`,
+      durationMs: 1400,
+    });
+  }
 }
 
 function resetCharacterState() {
@@ -546,16 +725,24 @@ function resetCharacterState() {
     maxHealth: 120,
     damage: 15,
     attackSpeed: 1.15,
+    skillPoints: 0,
     stats: {
       vitality: 0,
       power: 0,
       haste: 0,
+    },
+    talents: {
+      criticalDamage: 0,
+      healthBonus: 0,
+      shopDiscount: 0,
+      luck: 0,
     },
   };
   state.enemy = null;
   state.wave = 1;
   state.maxUnlockedLevel = 1;
   state.roadmapStart = 1;
+  state.stage = createStageState(1);
   state.inventory = [];
   state.equipped = {};
   state.shopStock = createInitialShopStock();
@@ -563,6 +750,8 @@ function resetCharacterState() {
   state.activePanel = "shop";
   state.activeEffects = [];
   state.bestiary = {};
+  state.leaderboard = [];
+  state.leaderboardFetchedAt = 0;
   state.soundEnabled = true;
   state.killsSinceLoot = 0;
   state.lastEnemyName = "";
@@ -594,19 +783,25 @@ const els = {
   roadmapRange: document.querySelector("#roadmapRange"),
   roadmapStatus: document.querySelector("#roadmapStatus"),
   roadmapGrid: document.querySelector("#roadmapGrid"),
+  stageBanner: document.querySelector("#stageBanner"),
+  stageBannerTitle: document.querySelector("#stageBannerTitle"),
+  stageBannerText: document.querySelector("#stageBannerText"),
   xpText: document.querySelector("#xpText"),
   xpBar: document.querySelector("#xpBar"),
   goldText: document.querySelector("#goldText"),
   pointsText: document.querySelector("#pointsText"),
   statsGrid: document.querySelector("#statsGrid"),
+  talentPointsText: document.querySelector("#talentPointsText"),
+  talentTree: document.querySelector("#talentTree"),
+  equippedSummary: document.querySelector("#equippedSummary"),
   enemyList: document.querySelector("#enemyList"),
+  leaderboardList: document.querySelector("#leaderboardList"),
   shopList: document.querySelector("#shopList"),
   shopHint: document.querySelector("#shopHint"),
   refreshShopButton: document.querySelector("#refreshShopButton"),
   shopRefreshHint: document.querySelector("#shopRefreshHint"),
   inventoryList: document.querySelector("#inventoryList"),
   inventoryCount: document.querySelector("#inventoryCount"),
-  equipmentGrid: document.querySelector("#equipmentGrid"),
   craftingList: document.querySelector("#craftingList"),
   recipeList: document.querySelector("#recipeList"),
   craftHint: document.querySelector("#craftHint"),
@@ -628,6 +823,7 @@ const slotLabels = {
   helmet: "Başlık",
   gloves: "Eldiven",
   ring: "Yüzük",
+  boots: "Bot",
 };
 
 function getStageWidth() {
@@ -681,7 +877,10 @@ els.resetButton.addEventListener("click", () => {
   if (!state.session.active) return;
   if (!confirm("Karakter, envanter, altın ve tüm ilerleme sıfırlansın mı?")) return;
   resetCharacterState();
-  spawnEnemy();
+  beginStage(1, {
+    title: "Stage 1",
+    text: "Macera baştan başladı.",
+  });
   state.panelsDirty = true;
   queueSave("Karakter sıfırlandı");
   render();
@@ -695,11 +894,18 @@ els.panelTabs.forEach((button) => {
   button.addEventListener("click", () => {
     state.activePanel = button.dataset.panelTab;
     renderPanelTabs();
+    if (state.activePanel === "leaderboard") refreshLeaderboard(true);
   });
 });
 
 window.addEventListener("beforeunload", () => {
   flushSave();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  state.lastFrameAt = performance.now();
+  render();
 });
 
 async function handleAuth(action) {
@@ -756,6 +962,7 @@ async function startSession(user, token) {
   setSaveStatus("Karakter yuklendi");
   render();
   renderEnemyFrame();
+  refreshLeaderboard(true);
 }
 
 function showAuthMessage(message) {
@@ -807,8 +1014,27 @@ async function flushSave() {
       saveData: createSaveData(),
     });
     setSaveStatus("Kaydedildi");
+    if (state.activePanel === "leaderboard") refreshLeaderboard(true);
   } catch {
     setSaveStatus("Kayıt hatası");
+  }
+}
+
+async function refreshLeaderboard(force = false) {
+  const now = Date.now();
+  if (!force && now - state.leaderboardFetchedAt < 10000) return;
+  state.leaderboardFetchedAt = now;
+
+  try {
+    const data = await apiGet("/api/leaderboard");
+    state.leaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+    state.panelsDirty = true;
+    renderPanels();
+  } catch {
+    state.leaderboard = [];
+    if (els.leaderboardList) {
+      els.leaderboardList.innerHTML = '<div class="leaderboard-empty">Liderlik tablosu yüklenemedi.</div>';
+    }
   }
 }
 
@@ -820,12 +1046,48 @@ function getEffectBonus(key) {
   return state.activeEffects.reduce((sum, activeEffect) => sum + (activeEffect.effect?.[key] || 0), 0);
 }
 
+function clampTalentLevels() {
+  state.hero.talents = state.hero.talents || {};
+  Object.entries(talentConfig).forEach(([key, talent]) => {
+    state.hero.talents[key] = clamp(Math.round(Number(state.hero.talents[key]) || 0), 0, talent.max);
+  });
+}
+
+function getTalentLevel(key) {
+  return clamp(Math.round(Number(state.hero.talents?.[key]) || 0), 0, talentConfig[key]?.max || 0);
+}
+
+function getTalentBonus(key) {
+  const talent = talentConfig[key];
+  return talent ? getTalentLevel(key) * talent.perPoint : 0;
+}
+
+function getCriticalDamageMultiplier() {
+  return 1 + getTalentBonus("criticalDamage");
+}
+
+function getShopDiscountRate() {
+  return Math.min(0.08, getTalentBonus("shopDiscount"));
+}
+
+function getLuckDropBonus() {
+  return Math.min(0.15, getTalentBonus("luck"));
+}
+
+function getDiscountedShopCost(cost) {
+  return Math.max(1, Math.round((Number(cost) || 0) * (1 - getShopDiscountRate())));
+}
+
+function getShopItemPrice(item) {
+  return getDiscountedShopCost(item.cost);
+}
+
 function getHeroDamage() {
   return state.hero.damage + getItemBonus("damage") + getEffectBonus("damage");
 }
 
 function getHeroMaxHealth() {
-  return state.hero.maxHealth + getItemBonus("maxHealth") + getEffectBonus("maxHealth");
+  return state.hero.maxHealth + getTalentBonus("healthBonus") + getItemBonus("maxHealth") + getEffectBonus("maxHealth");
 }
 
 function getHeroAttackSpeed() {
@@ -843,13 +1105,21 @@ function canEquipItem(item) {
 
 function applyTierStyle(element, item) {
   const tier = getItemTierConfig(item);
+  const tierLevel = getItemTier(item);
   element.style.setProperty("--tier-color", tier.color);
-  element.dataset.tier = getItemTier(item);
+  element.dataset.tier = tierLevel;
+  element.classList.remove("tier-1", "tier-2", "tier-3", "tier-4", "tier-5", "tier-6", "tier-7");
+  element.classList.add(`tier-${tierLevel}`);
 }
 
 function chooseLootTier(enemyLevel) {
-  const scaledTier = Math.max(1, Math.ceil(enemyLevel / 3));
-  const maxTier = enemyLevel >= 45 ? Math.min(6, scaledTier) : Math.min(5, scaledTier);
+  const maxTier = enemyLevel >= 400 ? 7
+    : enemyLevel >= 275 ? 6
+      : enemyLevel >= 140 ? 5
+        : enemyLevel >= 65 ? 4
+          : enemyLevel >= 24 ? 3
+            : enemyLevel >= 8 ? 2
+              : 1;
   const entries = Object.entries(tierConfig).filter(([tier]) => Number(tier) <= maxTier);
   const totalWeight = entries.reduce((sum, [, tier]) => sum + tier.dropWeight, 0);
   let roll = Math.random() * totalWeight;
@@ -872,23 +1142,159 @@ function removeInventoryItem(uid) {
   return item;
 }
 
+function syncStageAlias() {
+  state.wave = Math.max(1, Number(state.stage.current) || 1);
+  state.roadmapStart = getRoadmapBlockStart(state.wave);
+}
+
+function setStageBanner(title, text = "", type = "info", durationMs = STAGE_CLEAR_MESSAGE_MS) {
+  const now = performance.now();
+  state.stage.messageTitle = title;
+  state.stage.messageText = text;
+  state.stage.messageType = type;
+  state.stage.messageUntil = title ? now + durationMs : 0;
+}
+
+function beginStageTravel({ title = "", text = "", type = "info", durationMs = STAGE_TRAVEL_MS } = {}) {
+  state.stage.phase = "travel";
+  state.stage.phaseUntil = performance.now() + durationMs;
+  state.stage.pendingStage = 0;
+  state.enemy = null;
+  state.lastAttackAt = 0;
+  state.lastEnemyAttackAt = 0;
+  if (title) setStageBanner(title, text, type, Math.max(durationMs - 250, 900));
+  state.panelsDirty = true;
+}
+
+function beginStage(stageNumber, options = {}) {
+  const current = Math.max(1, Math.round(stageNumber));
+  state.stage = createStageState(current);
+  syncStageAlias();
+  beginStageTravel({
+    title: options.title || `Stage ${current}`,
+    text: options.text || "Yolculuk başlıyor.",
+    type: options.type || "info",
+  });
+}
+
+function beginStageCombat(forcedTemplate = null) {
+  state.stage.phase = "combat";
+  state.stage.phaseUntil = 0;
+  state.stage.pendingStage = 0;
+  state.stage.messageTitle = "";
+  state.stage.messageText = "";
+  state.stage.messageUntil = 0;
+  spawnEnemy(forcedTemplate);
+  state.panelsDirty = true;
+}
+
+function restartCurrentStage() {
+  beginStage(state.stage.current, {
+    title: "Stage Yeniden Başladı",
+    text: `Stage ${state.stage.current} baştan oynanıyor.`,
+    type: "fail",
+  });
+}
+
+function recoverAfterStageClear() {
+  const maxHealth = getHeroMaxHealth();
+  const before = state.hero.health;
+  const recovery = Math.max(18, Math.round(maxHealth * 0.18));
+  state.hero.health = Math.min(maxHealth, state.hero.health + recovery);
+  return Math.round(state.hero.health - before);
+}
+
+function completeCurrentStage() {
+  const completedStage = state.stage.current;
+  const nextStage = completedStage + 1;
+  const recoveredHealth = recoverAfterStageClear();
+  state.maxUnlockedLevel = Math.max(state.maxUnlockedLevel, nextStage);
+  state.stage.phase = "clear";
+  state.stage.phaseUntil = performance.now() + STAGE_CLEAR_HOLD_MS;
+  state.stage.pendingStage = nextStage;
+  state.enemy = null;
+  state.lastAttackAt = 0;
+  state.lastEnemyAttackAt = 0;
+  setStageBanner(
+    "Stage Geçildi",
+    `Stage ${completedStage} tamamlandı. Sıradaki hedef Stage ${nextStage}.${recoveredHealth > 0 ? ` Kısa mola: +${recoveredHealth} can.` : ""}`,
+    "success",
+    STAGE_CLEAR_HOLD_MS + STAGE_TRAVEL_MS - 150,
+  );
+  state.panelsDirty = true;
+  showToast(`Stage ${completedStage} geçildi`, "level");
+  playSound("level");
+}
+
+function finishStageClearTransition() {
+  const nextStage = Math.max(1, Number(state.stage.pendingStage) || state.stage.current + 1);
+  state.stage = createStageState(nextStage);
+  syncStageAlias();
+  beginStageTravel({
+    title: `Stage ${nextStage}`,
+    text: "Yeni bölgeye ilerleniyor.",
+    type: "info",
+  });
+}
+
+function updateStagePhase(now) {
+  if (state.stage.messageUntil > 0 && now >= state.stage.messageUntil) {
+    state.stage.messageTitle = "";
+    state.stage.messageText = "";
+    state.stage.messageUntil = 0;
+  }
+
+  if (state.heroDownUntil > 0) return;
+  if (state.stage.phase === "clear" && now >= state.stage.phaseUntil) {
+    finishStageClearTransition();
+    return;
+  }
+
+  if (state.stage.phase === "travel" && now >= state.stage.phaseUntil) {
+    beginStageCombat();
+  }
+}
+
+function getCurrentEnemyLevel() {
+  const stageNumber = Math.max(1, Number(state.stage.current) || state.wave || 1);
+  const stagePressure = Math.floor((stageNumber - 1) / 12);
+  const enemyPressure = Math.floor((Number(state.stage.enemiesDefeated) || 0) / 3);
+  return Math.max(1, stageNumber + stagePressure + enemyPressure);
+}
+
+function getEnemyStatProfile(enemyLevel) {
+  const stageNumber = Math.max(1, Number(state.stage.current) || 1);
+  const defeatedInStage = Math.max(0, Number(state.stage.enemiesDefeated) || 0);
+  const isStageFinalEnemy = defeatedInStage >= getStageEnemyTarget(stageNumber) - 1;
+  const stageModifier = 1 + Math.min((stageNumber - 1) * 0.003, 0.34);
+  const finalEnemyModifier = isStageFinalEnemy ? 1.12 : 1;
+
+  return {
+    maxHealth: Math.round((44 + enemyLevel * 13 + Math.pow(enemyLevel, 1.12) * 4.8) * stageModifier * finalEnemyModifier),
+    damage: Math.round((3 + enemyLevel * 1.34 + Math.pow(enemyLevel, 1.03) * 0.28) * (isStageFinalEnemy ? 1.08 : 1)),
+    attackSpeed: Math.min(0.88 + Math.sqrt(enemyLevel) * 0.045 + enemyLevel * 0.0024, 1.62),
+    moveSpeed: Math.min(0.4 + Math.sqrt(enemyLevel) * 0.012, 0.64),
+    gold: Math.round(12 + enemyLevel * 5 + stageNumber * 1.5),
+  };
+}
+
 function spawnEnemy(forcedTemplate = null) {
   const options = enemies.length > 1 ? enemies.filter((enemy) => enemy.name !== state.lastEnemyName) : enemies;
   const template = forcedTemplate || options[Math.floor(Math.random() * options.length)];
-  const level = state.wave;
-  const maxHealth = Math.round(48 + level * 18 + Math.pow(level, 1.22) * 7);
+  const level = getCurrentEnemyLevel();
+  const profile = getEnemyStatProfile(level);
 
   state.enemy = {
     ...template,
     level,
-    maxHealth,
-    health: maxHealth,
-    damage: Math.round(4 + level * 1.9 + Math.pow(level, 1.08) * 0.4),
-    attackSpeed: Math.min(0.95 + level * 0.018, 1.85),
-    distance: 1,
-    moveSpeed: Math.min(0.42 + level * 0.018, 0.72),
+    maxHealth: profile.maxHealth,
+    health: profile.maxHealth,
+    damage: profile.damage,
+    attackSpeed: profile.attackSpeed,
+    distance: ENEMY_SPAWN_DISTANCE,
+    moveSpeed: profile.moveSpeed,
     xp: getEnemyXpReward(level),
-    gold: Math.round(12 + level * 6),
+    gold: profile.gold,
     spawnedAt: performance.now(),
     attackAnimUntil: 0,
     currentAnim: "",
@@ -915,18 +1321,17 @@ function setRoadmapBlock(start) {
 function selectStageLevel(level) {
   const selectedLevel = Math.max(1, Math.round(level));
   if (selectedLevel > state.maxUnlockedLevel) {
-    setSaveStatus(`Level ${selectedLevel} için XP gerekiyor`, 1600);
+    setSaveStatus(`Stage ${selectedLevel} henüz açılmadı`, 1600);
     return;
   }
 
-  state.wave = selectedLevel;
-  state.roadmapStart = getRoadmapBlockStart(state.wave);
-  state.lastAttackAt = 0;
-  state.lastEnemyAttackAt = 0;
-  spawnEnemy();
+  beginStage(selectedLevel, {
+    title: `Stage ${selectedLevel}`,
+    text: "Bu stage baştan başlıyor.",
+  });
   state.panelsDirty = true;
-  setSaveStatus(`Level ${state.wave} seçildi`);
-  queueSave("Level seçildi");
+  setSaveStatus(`Stage ${state.stage.current} seçildi`);
+  queueSave("Stage seçildi");
   render();
 }
 
@@ -934,6 +1339,7 @@ function testEnemy(enemyName) {
   const template = enemies.find((enemy) => enemy.name === enemyName);
   if (!template) return;
 
+  state.stage.phase = "combat";
   spawnEnemy(template);
   state.enemy.distance = 0;
   state.enemy.health = state.enemy.maxHealth;
@@ -947,22 +1353,25 @@ function testEnemy(enemyName) {
 }
 
 function approachEnemy(deltaSeconds) {
-  if (state.heroDownUntil > 0 || state.enemy.distance <= 0) return;
+  if (state.stage.phase !== "combat" || state.heroDownUntil > 0 || !state.enemy || state.enemy.distance <= 0) return;
   state.enemy.distance = Math.max(0, state.enemy.distance - state.enemy.moveSpeed * deltaSeconds);
 }
 
 function attackEnemy(now) {
-  if (state.heroDownUntil > now) return;
+  if (state.stage.phase !== "combat" || state.heroDownUntil > now || !state.enemy) return;
+  if (state.enemy.distance > HERO_SHOOT_DISTANCE) return;
 
   const interval = 1000 / getHeroAttackSpeed();
   if (now - state.lastAttackAt < interval) return;
 
   state.lastAttackAt = now;
-  const damage = Math.round(getHeroDamage() * randomBetween(0.9, 1.15));
+  const isCritical = Math.random() < 0.12;
+  const criticalMultiplier = isCritical ? randomBetween(1.55, 1.9) * getCriticalDamageMultiplier() : 1;
+  const damage = Math.round(getHeroDamage() * randomBetween(0.9, 1.15) * criticalMultiplier);
   state.enemy.health = Math.max(0, state.enemy.health - damage);
   fireArrow();
   flashEnemy();
-  showDamageNumber(damage);
+  showDamageNumber(damage, isCritical);
   playSound("hit");
   queueSave("Savaş kaydediliyor");
 
@@ -972,7 +1381,7 @@ function attackEnemy(now) {
 }
 
 function enemyAttackHero(now) {
-  if (state.heroDownUntil > now || state.enemy.distance > 0) return;
+  if (state.stage.phase !== "combat" || state.heroDownUntil > now || !state.enemy || state.enemy.distance > 0) return;
 
   const interval = 1000 / state.enemy.attackSpeed;
   if (now - state.lastEnemyAttackAt < interval) return;
@@ -998,9 +1407,22 @@ function defeatEnemy() {
   state.killsSinceLoot += 1;
   const droppedItem = rollLoot(defeated.level);
   recordBestiaryKill(defeated, droppedItem);
+  state.stage.enemiesDefeated = Math.min(state.stage.enemiesRequired, state.stage.enemiesDefeated + 1);
   levelUpIfNeeded();
   state.panelsDirty = true;
-  spawnEnemy();
+
+  if (state.stage.enemiesDefeated >= state.stage.enemiesRequired) {
+    completeCurrentStage();
+  } else {
+    spawnEnemy();
+    setStageBanner(
+      `Stage ${state.stage.current}`,
+      `${state.stage.enemiesDefeated}/${state.stage.enemiesRequired} düşman temizlendi.`,
+      "info",
+      1100,
+    );
+  }
+
   queueSave("İlerleme kaydediliyor");
 }
 
@@ -1037,8 +1459,9 @@ function getLootLevelModifier(enemyLevel) {
 
 function rollLoot(enemyLevel) {
   const levelModifier = getLootLevelModifier(enemyLevel);
-  const dropChance = Math.min(0.035 + enemyLevel * 0.0015, 0.1) * levelModifier;
-  const pityThreshold = Math.round(18 / levelModifier);
+  const luckMultiplier = 1 + getLuckDropBonus();
+  const dropChance = Math.min(0.035 + enemyLevel * 0.0015, 0.1) * levelModifier * luckMultiplier;
+  const pityThreshold = Math.round(18 / Math.max(0.2, levelModifier * luckMultiplier));
   const pityDrop = state.killsSinceLoot >= pityThreshold;
   if (!pityDrop && Math.random() > dropChance) return null;
 
@@ -1060,7 +1483,7 @@ function rollLoot(enemyLevel) {
 }
 
 function getDeathXpPenalty() {
-  return calculateDeathXpPenalty(state.hero.level, state.wave);
+  return calculateDeathXpPenalty(state.hero.level, state.stage.current);
 }
 
 function downHero(now) {
@@ -1084,11 +1507,11 @@ function updateDeath(now) {
 
   state.heroDownUntil = 0;
   state.hero.health = getHeroMaxHealth();
-  state.enemy.distance = 1;
   state.lastAttackAt = 0;
   state.lastEnemyAttackAt = 0;
   els.heroWrap.classList.remove("dead");
   els.deathOverlay.hidden = true;
+  restartCurrentStage();
   queueSave("Diriliş kaydediliyor");
 }
 
@@ -1099,18 +1522,16 @@ function levelUpIfNeeded() {
     state.hero.xp -= state.hero.xpToNext;
     state.hero.level += 1;
     state.hero.xpToNext = getXpForNextLevel(state.hero.level);
-    state.maxUnlockedLevel = Math.max(state.maxUnlockedLevel, state.hero.level);
     state.panelsDirty = true;
   }
 
   if (state.hero.level > previousLevel) {
-    state.wave = state.hero.level;
-    state.maxUnlockedLevel = Math.max(state.maxUnlockedLevel, state.wave);
-    state.roadmapStart = getRoadmapBlockStart(state.wave);
+    const gainedLevels = state.hero.level - previousLevel;
+    state.hero.skillPoints = Math.max(0, Number(state.hero.skillPoints) || 0) + gainedLevels;
     state.lastAttackAt = 0;
     state.lastEnemyAttackAt = 0;
-    setSaveStatus(`Level ${state.hero.level} açıldı`, 1600);
-    showToast(`Level ${state.hero.level} açıldı`, "level");
+    setSaveStatus(`Level ${state.hero.level} açıldı: +${gainedLevels} yetenek puanı`, 1800);
+    showToast(`Level ${state.hero.level} açıldı: +${gainedLevels} yetenek puanı`, "level");
     playSound("level");
   }
 }
@@ -1127,12 +1548,31 @@ function buyUpgrade(upgradeKey) {
   render();
 }
 
+function buyTalent(talentKey) {
+  const talent = talentConfig[talentKey];
+  if (!talent || state.hero.skillPoints <= 0) return;
+
+  const currentLevel = getTalentLevel(talentKey);
+  if (currentLevel >= talent.max) return;
+
+  state.hero.skillPoints -= 1;
+  state.hero.talents[talentKey] = currentLevel + 1;
+  if (talentKey === "healthBonus") {
+    state.hero.health = Math.min(getHeroMaxHealth(), state.hero.health + talent.perPoint);
+  }
+  state.panelsDirty = true;
+  setSaveStatus(`${talent.label} geliştirildi`);
+  queueSave("Yetenek kaydediliyor");
+  render();
+}
+
 function buyItem(stockId) {
   const stockIndex = state.shopStock.findIndex((entry) => entry.stockId === stockId);
   const item = state.shopStock[stockIndex];
-  if (!item || state.gold < item.cost) return;
+  const price = item ? getShopItemPrice(item) : 0;
+  if (!item || state.gold < price) return;
 
-  state.gold -= item.cost;
+  state.gold -= price;
   const { stockId: _stockId, ...inventoryItem } = item;
   state.inventory.push({ ...inventoryItem, uid: crypto.randomUUID(), source: "shop" });
   state.shopStock[stockIndex] = createReplacementShopItem(item);
@@ -1142,7 +1582,7 @@ function buyItem(stockId) {
 }
 
 function getShopRefreshCost() {
-  return calculateShopRefreshCost(state.hero.level, state.wave);
+  return getDiscountedShopCost(calculateShopRefreshCost(state.hero.level, state.wave));
 }
 
 function refreshShopForGold() {
@@ -1327,6 +1767,8 @@ function positionComparePanel(event) {
 }
 
 function showComparePanel(item, event) {
+  els.comparePanel.style.setProperty("--tier-color", getItemTierConfig(item).color);
+  els.comparePanel.dataset.tier = getItemTier(item);
   els.comparePanel.innerHTML = getItemComparisonHtml(item);
   els.comparePanel.hidden = false;
   positionComparePanel(event);
@@ -1440,13 +1882,19 @@ function consumeCraftSlots() {
   return consumedTiers;
 }
 
-function getMaterialSignature(materialIds) {
-  return [...materialIds].sort().join("|");
+function chooseCraftTier(slotItems) {
+  const averageTier = slotItems.reduce((sum, item) => sum + getItemTier(item), 0) / slotItems.length;
+  const drift = Math.random() > 0.78 ? 1 : Math.random() < 0.18 ? -1 : 0;
+  return clamp(Math.round(averageTier) + drift, 1, 7);
 }
 
-function findCraftRecipe(slotItems) {
-  const signature = getMaterialSignature(slotItems.map((item) => item.id));
-  return craftRecipes.find((recipe) => getMaterialSignature(recipe.materialIds) === signature) || null;
+function createRandomCraftedItem(slotItems) {
+  const targetTier = chooseCraftTier(slotItems);
+  const exactPool = allLootItems.filter((item) => getItemType(item) !== "material" && getItemTier(item) === targetTier);
+  const fallbackPool = allLootItems.filter((item) => getItemType(item) !== "material" && getItemTier(item) <= targetTier);
+  const pool = exactPool.length > 0 ? exactPool : fallbackPool;
+  const template = pool[Math.floor(Math.random() * pool.length)] || allLootItems[0];
+  return { ...template, cost: 0 };
 }
 
 function craftItemFromMaterials() {
@@ -1460,20 +1908,8 @@ function craftItemFromMaterials() {
     return;
   }
 
-  const recipe = findCraftRecipe(slotItems);
-  if (!recipe) {
-    setSaveStatus("Bu parçalar için tarif yok", 1600);
-    return;
-  }
-
   consumeCraftSlots();
-  const template = itemCatalog.get(recipe.resultId);
-  if (!template) {
-    setSaveStatus("Tarif sonucu bulunamadı", 1600);
-    return;
-  }
-
-  const item = { ...template, cost: 0 };
+  const item = createRandomCraftedItem(slotItems);
   state.inventory.push({ ...item, uid: crypto.randomUUID(), source: "crafted" });
   state.panelsDirty = true;
   setSaveStatus(`${item.name} oluşturuldu`);
@@ -1502,9 +1938,20 @@ function unequipItem(slot) {
   render();
 }
 
+function triggerHeroShotAnimation() {
+  els.heroWrap.classList.remove("shooting");
+  void els.heroWrap.offsetWidth;
+  els.heroWrap.classList.add("shooting");
+  clearTimeout(heroShotTimer);
+  heroShotTimer = window.setTimeout(() => {
+    els.heroWrap.classList.remove("shooting");
+  }, 720);
+}
+
 function fireArrow() {
   const arrow = document.createElement("span");
   arrow.className = "arrow";
+  triggerHeroShotAnimation();
   playSound("arrow");
   positionProjectileLane();
   const distance = Math.max(120, els.projectileLane.getBoundingClientRect().width - 50);
@@ -1532,10 +1979,10 @@ function flashEnemy() {
   els.enemyAvatar.classList.add("hit");
 }
 
-function showDamageNumber(damage) {
+function showDamageNumber(damage, isCritical = false) {
   const popup = document.createElement("span");
-  popup.className = "damage-popup";
-  popup.textContent = `-${damage}`;
+  popup.className = `damage-popup${isCritical ? " critical" : ""}`;
+  popup.textContent = isCritical ? `KRIT -${damage}` : `-${damage}`;
   popup.style.left = `${46 + randomBetween(-14, 14)}%`;
   popup.style.top = `${18 + randomBetween(-8, 8)}%`;
   els.enemyWrap.append(popup);
@@ -1586,8 +2033,30 @@ function itemBonusText(item) {
   return parts.filter(Boolean).join(", ");
 }
 
+function compactItemMeta(item) {
+  const tier = getItemTierConfig(item);
+  const type = getItemType(item);
+  const typeLabel = type === "material" ? "Malzeme" : type === "potion" ? "İksir" : slotLabels[item.slot] || "Ekipman";
+  return `T${getItemTier(item)} ${tier.label} / Lv ${getItemRequiredLevel(item)} / ${typeLabel}`;
+}
+
+function shopItemMeta(item) {
+  const price = getShopItemPrice(item);
+  return price < item.cost
+    ? `${compactItemMeta(item)} / ${price} altın`
+    : `${compactItemMeta(item)} / ${item.cost} altın`;
+}
+
+function isEquippedInventoryItem(item) {
+  return getItemType(item) === "equipment" && state.equipped[item.slot]?.uid === item.uid;
+}
+
+function getVisibleInventoryItems() {
+  return state.inventory.filter((item) => !isEquippedInventoryItem(item));
+}
+
 function getInventoryItemCount() {
-  return state.inventory.reduce((total, item) => (
+  return getVisibleInventoryItems().reduce((total, item) => (
     total + (getItemType(item) === "material" ? getItemQuantity(item) : 1)
   ), 0);
 }
@@ -1595,20 +2064,71 @@ function getInventoryItemCount() {
 // Panel render fonksiyonları: DOM yeniden çizimleri burada toplanıyor.
 function renderStats() {
   els.statsGrid.innerHTML = "";
+  const statIcons = {
+    maxHealth: "HP",
+    damage: "DMG",
+    attackSpeed: "SPD",
+  };
   Object.entries(upgradeConfig).forEach(([key, upgrade]) => {
     const cost = getUpgradeCost(key);
+    const canBuy = state.gold >= cost;
     const row = document.createElement("div");
-    row.className = "stat-row";
+    row.className = `stat-row${canBuy ? " can-buy" : " cannot-buy"}`;
+    row.dataset.stat = key;
     row.innerHTML = `
+      <span class="stat-icon" aria-hidden="true">${statIcons[key] || "UP"}</span>
       <div>
         <strong>${upgrade.label}: ${upgrade.value()}</strong>
         <span>${upgrade.description} - ${cost} altın</span>
       </div>
-      <button type="button" aria-label="${upgrade.label} satın al" ${state.gold < cost ? "disabled" : ""}>Al</button>
+      <button type="button" aria-label="${upgrade.label} satın al" ${canBuy ? "" : "disabled"}>${canBuy ? "Al" : "Yetersiz"}</button>
     `;
     row.querySelector("button").addEventListener("click", () => buyUpgrade(key));
     els.statsGrid.append(row);
   });
+}
+
+function renderTalentTree() {
+  if (!els.talentTree || !els.talentPointsText) return;
+  const points = Math.max(0, Number(state.hero.skillPoints) || 0);
+  els.talentPointsText.textContent = `${points} puan`;
+  els.talentTree.innerHTML = "";
+
+  Object.entries(talentConfig).forEach(([key, talent]) => {
+    const level = getTalentLevel(key);
+    const isMaxed = level >= talent.max;
+    const canBuy = points > 0 && !isMaxed;
+    const row = document.createElement("div");
+    row.className = `talent-row${canBuy ? " can-buy" : ""}${isMaxed ? " maxed" : ""}`;
+    row.innerHTML = `
+      <span class="talent-icon" aria-hidden="true">${talent.icon}</span>
+      <div>
+        <strong>${talent.label}</strong>
+        <small>${talent.description}</small>
+        <em>${talent.format(level)} / ${level}/${talent.max}</em>
+      </div>
+      <button type="button" ${canBuy ? "" : "disabled"}>${isMaxed ? "Max" : "Puan Ver"}</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => buyTalent(key));
+    els.talentTree.append(row);
+  });
+}
+
+function getHeroPower() {
+  return Math.round(state.hero.level * 85 + getHeroDamage() * 14 + getHeroMaxHealth() * 0.85 + getHeroAttackSpeed() * 140 + getTalentBonus("criticalDamage") * 500 + getLuckDropBonus() * 320);
+}
+
+function renderEquippedSummary() {
+  els.equippedSummary.innerHTML = "";
+  const powerRow = document.createElement("div");
+  powerRow.className = "equipment-power-card";
+  powerRow.innerHTML = `
+    <span>Toplam Güç</span>
+    <strong>${getHeroPower()}</strong>
+    <small>${Math.round(getHeroDamage())} hasar / ${getHeroMaxHealth()} can / ${getHeroAttackSpeed().toFixed(2)}/sn</small>
+  `;
+  els.equippedSummary.append(powerRow);
+  renderEquipmentDoll(els.equippedSummary);
 }
 
 function renderEnemyList() {
@@ -1629,11 +2149,32 @@ function renderEnemyList() {
   });
 }
 
+function renderLeaderboard() {
+  els.leaderboardList.innerHTML = "";
+  if (!state.leaderboard.length) {
+    els.leaderboardList.innerHTML = '<div class="leaderboard-empty">Henüz liderlik kaydı yok.</div>';
+    return;
+  }
+
+  state.leaderboard.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = `leaderboard-row${entry.username === state.session.username ? " current" : ""}`;
+    row.innerHTML = `
+      <span>${index + 1}</span>
+      <strong>${entry.username}</strong>
+      <small>Level ${entry.level} / Stage ${entry.wave}</small>
+      <b>${entry.power} güç</b>
+    `;
+    els.leaderboardList.append(row);
+  });
+}
+
+
 function renderRoadmap() {
   if (!state.roadmapStart) state.roadmapStart = getRoadmapBlockStart(state.wave);
   const blockStart = state.roadmapStart;
   const blockEnd = blockStart === 1 ? 50 : blockStart + 50;
-  els.roadmapRange.textContent = `${blockStart} - ${blockEnd}`;
+  els.roadmapRange.textContent = `Stage ${blockStart} - ${blockEnd}`;
   els.roadmapStatus.innerHTML = "";
 
   const previousButton = document.createElement("button");
@@ -1644,7 +2185,7 @@ function renderRoadmap() {
   previousButton.addEventListener("click", () => setRoadmapBlock(blockStart - 50));
 
   const statusText = document.createElement("span");
-  statusText.textContent = `Seçili ${state.wave} / Açık ${state.maxUnlockedLevel}`;
+  statusText.textContent = `Stage ${state.stage.current}: ${state.stage.enemiesDefeated}/${state.stage.enemiesRequired} / Açık ${state.maxUnlockedLevel}`;
 
   const nextButton = document.createElement("button");
   nextButton.type = "button";
@@ -1658,12 +2199,22 @@ function renderRoadmap() {
 
   for (let level = blockStart; level <= blockEnd; level += 1) {
     const isLocked = level > state.maxUnlockedLevel;
+    const isCurrent = level === state.stage.current;
+    const isCompleted = level < state.maxUnlockedLevel && !isCurrent;
+    const isBoss = level % 10 === 0;
+    const classes = ["road-level"];
+    if (isCurrent) classes.push("current");
+    if (isCompleted) classes.push("completed");
+    if (isLocked) classes.push("locked");
+    if (isBoss) classes.push("boss");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `road-level${level === state.wave ? " current" : ""}${isLocked ? " locked" : ""}`;
+    button.className = classes.join(" ");
     button.textContent = level;
-    button.title = isLocked ? "Bu level için önce XP kasmalısın" : `Level ${level} seç`;
+    button.title = isLocked ? "Bu stage için önce önceki stage'i geçmelisin" : `${isBoss ? "Boss " : ""}Stage ${level} seç`;
     button.dataset.locked = isLocked ? "true" : "false";
+    button.dataset.state = isLocked ? "locked" : isCurrent ? "current" : isCompleted ? "completed" : "available";
+    button.dataset.boss = isBoss ? "true" : "false";
     button.addEventListener("click", () => selectStageLevel(level));
     els.roadmapGrid.append(button);
   }
@@ -1676,12 +2227,18 @@ function renderStatusPanel() {
     ["Can", `${Math.round(state.hero.health)} / ${maxHealth}`],
     ["Ortalama Hasar", Math.round(getHeroDamage())],
     ["Saldırı Hızı", `${getHeroAttackSpeed().toFixed(2)}/sn`],
+    ["Yetenek Puanı", Math.max(0, Number(state.hero.skillPoints) || 0)],
+    ["Kritik Hasar", `+${Math.round(getTalentBonus("criticalDamage") * 100)}%`],
+    ["Dükkan İndirimi", `-${(getShopDiscountRate() * 100).toFixed(1)}%`],
+    ["Şans", `+${(getLuckDropBonus() * 100).toFixed(1)}%`],
     ["Altın", state.gold],
-    ["Savaş Leveli", state.wave],
-    ["Açık Level", state.maxUnlockedLevel],
+    ["Stage", state.stage.current],
+    ["Stage İlerlemesi", `${state.stage.enemiesDefeated}/${state.stage.enemiesRequired}`],
+    ["Açık Stage", state.maxUnlockedLevel],
   ];
 
-  els.statusHint.textContent = state.activeEffects.length > 0 ? `${state.activeEffects.length} iksir aktif` : "Hazır";
+  const phaseText = state.stage.phase === "clear" ? "Stage tamamlandı" : state.stage.phase === "travel" ? "Yürüyor" : "Savaşta";
+  els.statusHint.textContent = state.activeEffects.length > 0 ? `${phaseText} / ${state.activeEffects.length} iksir aktif` : phaseText;
   els.statusGrid.innerHTML = rows.map(([label, value]) => `
     <div class="status-row">
       <span>${label}</span>
@@ -1698,6 +2255,7 @@ function renderShop() {
   els.refreshShopButton.disabled = state.gold < refreshCost;
   els.refreshShopButton.textContent = `Yenile`;
   state.shopStock.forEach((item) => {
+    const price = getShopItemPrice(item);
     const row = document.createElement("div");
     row.className = "item";
     applyTierStyle(row, item);
@@ -1705,9 +2263,9 @@ function renderShop() {
       <img class="item-icon" src="${getItemIcon(item)}" alt="" draggable="false" />
       <div>
         <strong>${item.name}</strong>
-        <small>${itemBonusText(item)} - ${item.cost} altın</small>
+        <small>${shopItemMeta(item)}</small>
       </div>
-      <button type="button" ${state.gold < item.cost ? "disabled" : ""}>Al</button>
+      <button type="button" ${state.gold < price ? "disabled" : ""}>Al</button>
     `;
     bindItemPreview(row, item);
     row.querySelector("button").addEventListener("click", () => buyItem(item.stockId));
@@ -1718,43 +2276,41 @@ function renderShop() {
 function renderInventory() {
   els.inventoryList.innerHTML = "";
   els.inventoryCount.textContent = `${getInventoryItemCount()} item`;
+  const visibleInventory = getVisibleInventoryItems();
 
-  if (state.inventory.length === 0) {
+  if (visibleInventory.length === 0) {
     const empty = document.createElement("div");
     empty.className = "item empty-item";
-    empty.innerHTML = "<div><strong>Çanta boş</strong><small>Nadir ganimet için düşman kes veya dükkandan item al.</small></div>";
+    empty.innerHTML = "<div><strong>Çanta boş</strong><small>Giyili eşyalar Kuşanım alanında görünür. Yeni ganimet için düşman kes veya dükkandan item al.</small></div>";
     els.inventoryList.append(empty);
     return;
   }
 
-  state.inventory.forEach((item) => {
+  visibleInventory.forEach((item) => {
     const itemType = getItemType(item);
-    const isEquipment = itemType === "equipment";
     const isMaterial = itemType === "material";
-    const isEquipped = isEquipment && state.equipped[item.slot]?.uid === item.uid;
     const locked = isItemLocked(item);
     const levelLocked = !canEquipItem(item);
     const row = document.createElement("div");
-    row.className = `item${isEquipped ? " equipped" : ""}${levelLocked ? " locked" : ""}${locked ? " secured" : ""}`;
+    row.className = `item${levelLocked ? " locked" : ""}${locked ? " secured" : ""}`;
     row.draggable = true;
     row.dataset.uid = item.uid;
     applyTierStyle(row, item);
-    const primaryText = itemType === "potion" ? "Ic" : isEquipped ? "Cikar" : levelLocked ? `Lv ${getItemRequiredLevel(item)}` : "Giy";
-    const sourceText = isMaterial ? "Malzeme" : itemType === "potion" ? "Iksir" : isEquipped ? "Kusanildi" : item.source === "drop" ? `Ganimet - ${item.slot}` : item.slot;
+    const primaryText = itemType === "potion" ? "Ic" : levelLocked ? `Lv ${getItemRequiredLevel(item)}` : "Giy";
     const itemName = item.name;
     const quantityBadge = isMaterial ? `<span class="item-quantity">${getItemQuantity(item)}x</span>` : "";
     const lockButton = `<button type="button" data-action="lock">${locked ? "Aç" : "Kilitle"}</button>`;
     const actionsHtml = isMaterial
       ? `<button type="button" data-action="craft" ${locked ? "disabled" : ""}>Ekle</button>${lockButton}<button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`
-      : `<button type="button" data-action="primary" ${levelLocked && !isEquipped ? "disabled" : ""}>${primaryText}</button>
+      : `<button type="button" data-action="primary" ${levelLocked ? "disabled" : ""}>${primaryText}</button>
         ${lockButton}
-        ${isEquipped ? "" : `<button type="button" data-action="salvage" ${locked ? "disabled" : ""}>Parcala</button><button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`}`;
+        <button type="button" data-action="salvage" ${locked ? "disabled" : ""}>Parcala</button><button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`;
     row.innerHTML = `
       ${quantityBadge}
       <img class="item-icon" src="${getItemIcon(item)}" alt="" draggable="false" />
       <div>
         <strong>${itemName}</strong>
-        <small>${sourceText} - ${itemBonusText(item)}</small>
+        <small>${compactItemMeta(item)}</small>
       </div>
       <div class="item-actions">
         ${actionsHtml}
@@ -1786,10 +2342,6 @@ function renderInventory() {
       document.querySelectorAll(".item.drag-over").forEach((element) => element.classList.remove("drag-over"));
     });
     row.querySelector("[data-action='primary']")?.addEventListener("click", () => {
-      if (isEquipped) {
-        unequipItem(item.slot);
-        return;
-      }
       if (itemType === "potion") {
         usePotion(item.uid);
         return;
@@ -1840,28 +2392,42 @@ function renderCrafting() {
 
 function renderRecipeList() {
   els.recipeList.innerHTML = "";
-  craftRecipes.forEach((recipe) => {
-    const result = itemCatalog.get(recipe.resultId);
-    const row = document.createElement("div");
-    row.className = "recipe-row";
-    if (result) applyTierStyle(row, result);
-    const materialText = recipe.materialIds
-      .map((id) => itemCatalog.get(id)?.name || id)
-      .join(" + ");
+  const slotItems = getCraftSlotItems().filter(Boolean);
+  const row = document.createElement("div");
+  row.className = "recipe-row craft-random-note";
+
+  if (slotItems.length === 3) {
+    const averageTier = slotItems.reduce((sum, item) => sum + getItemTier(item), 0) / slotItems.length;
+    const tier = clamp(Math.round(averageTier), 1, 7);
+    row.style.setProperty("--tier-color", tierConfig[tier].color);
     row.innerHTML = `
-      <strong>${recipe.name}</strong>
-      <small>${materialText}</small>
+      <strong>Rastgele T${tier} item</strong>
+      <small>Sonuç, koyduğun parçaların tier ortalamasına göre seçilir. Çok nadiren bir tier aşağı veya yukarı kayabilir.</small>
     `;
-    els.recipeList.append(row);
-  });
+  } else {
+    row.innerHTML = `
+      <strong>Rastgele üretim</strong>
+      <small>3 parça yerleştir. Yüksek tier parçalar daha yüksek tier item şansını artırır.</small>
+    `;
+  }
+
+  els.recipeList.append(row);
 }
 
-function renderEquipment() {
-  els.equipmentGrid.innerHTML = "";
+function renderEquipmentDoll(container) {
+  const doll = document.createElement("div");
+  doll.className = "equipment-doll";
+  doll.innerHTML = `
+    <div class="equipment-avatar" aria-hidden="true">
+      <div class="equipment-character-sprite"></div>
+    </div>
+  `;
+  container.append(doll);
+
   Object.entries(slotLabels).forEach(([slot, label]) => {
     const equipped = state.equipped[slot];
     const slotEl = document.createElement("div");
-    slotEl.className = `equip-slot${equipped ? " filled" : ""}`;
+    slotEl.className = `equip-slot doll-slot slot-${slot}${equipped ? " filled" : ""}`;
     slotEl.dataset.slot = slot;
     if (equipped) applyTierStyle(slotEl, equipped);
     slotEl.innerHTML = `
@@ -1887,11 +2453,12 @@ function renderEquipment() {
 
     const button = slotEl.querySelector("button");
     if (button) button.addEventListener("click", () => unequipItem(slot));
-    els.equipmentGrid.append(slotEl);
+    doll.append(slotEl);
   });
 }
 
 function renderPanelTabs() {
+  if (state.activePanel === "equipment") state.activePanel = "status";
   els.panelTabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.panelTab === state.activePanel);
   });
@@ -1905,38 +2472,66 @@ function renderPanels() {
   renderPanelTabs();
   renderRoadmap();
   renderStats();
+  renderTalentTree();
+  renderEquippedSummary();
   renderEnemyList();
+  renderLeaderboard();
   renderStatusPanel();
   renderShop();
   renderInventory();
   renderCrafting();
   renderRecipeList();
-  renderEquipment();
   state.panelsDirty = false;
 }
 
 function render() {
   const maxHealth = getHeroMaxHealth();
   state.hero.health = Math.min(state.hero.health, maxHealth);
+  const isTraveling = state.stage.phase === "travel" && state.heroDownUntil <= 0;
+
+  els.stage.classList.toggle("stage-traveling", isTraveling);
+  els.stage.classList.toggle("stage-combat", state.stage.phase === "combat");
+  els.stage.classList.toggle("stage-no-enemy", !state.enemy);
+  els.stage.classList.toggle("stage-boss", state.stage.current % 10 === 0);
+  els.stage.classList.toggle("stage-danger", state.hero.health / Math.max(1, maxHealth) <= 0.25 || state.heroDownUntil > 0);
+  els.heroWrap.classList.toggle("walking", isTraveling);
+  if (isTraveling || state.heroDownUntil > 0) {
+    els.heroWrap.classList.remove("shooting");
+  }
+
+  const showStageBanner = Boolean(state.stage.messageTitle && performance.now() < state.stage.messageUntil);
+  els.stageBanner.hidden = !showStageBanner;
+  if (showStageBanner) {
+    els.stageBanner.dataset.type = state.stage.messageType || "info";
+    els.stageBannerTitle.textContent = state.stage.messageTitle;
+    els.stageBannerText.textContent = state.stage.messageText || "";
+  }
 
   els.heroLevel.textContent = `Seviye ${state.hero.level}`;
   els.healthText.textContent = `${Math.round(state.hero.health)} / ${maxHealth}`;
   els.healthBar.style.width = `${(state.hero.health / maxHealth) * 100}%`;
-  els.enemyName.textContent = state.enemy.name;
-  els.enemyLevel.textContent = `Tehdit ${state.enemy.level}`;
-  els.enemyInitial.textContent = "";
-  const enemyPositionForViewport = getEnemyPosition();
-  els.enemyWrap.style.setProperty("--enemy-offset", `${Math.round(state.enemy.distance * enemyPositionForViewport.approachSpan + enemyPositionForViewport.contactOffset)}px`);
-  const enemyHeight = els.enemyAvatar.getBoundingClientRect().height || 120;
-  const enemyWidth = els.enemyAvatar.getBoundingClientRect().width || 120;
-  const groundOffset = (Number(getEnemyGroundOffset()) || 0) * getMobileCombatScale();
-  const healthTop = Math.round(Math.max(-12, groundOffset - enemyHeight * 0.16 - 12));
-  const nameTop = Math.round(Math.max(2, groundOffset * 0.68 + 4));
-  els.enemyWrap.style.setProperty("--enemy-health-top", `${healthTop}px`);
-  els.enemyWrap.style.setProperty("--enemy-name-top", `${nameTop}px`);
-  els.enemyWrap.style.setProperty("--enemy-health-width", `${Math.round(Math.max(68, Math.min(124, enemyWidth * 0.48)))}px`);
-  els.enemyHealthText.textContent = `${state.enemy.health} / ${state.enemy.maxHealth}`;
-  els.enemyHealthBar.style.width = `${(state.enemy.health / state.enemy.maxHealth) * 100}%`;
+  if (state.enemy) {
+    els.enemyName.textContent = state.enemy.name;
+    els.enemyLevel.textContent = `Tehdit ${state.enemy.level}`;
+    els.enemyInitial.textContent = "";
+    const enemyPositionForViewport = getEnemyPosition();
+    els.enemyWrap.style.setProperty("--enemy-offset", `${Math.round(state.enemy.distance * enemyPositionForViewport.approachSpan + enemyPositionForViewport.contactOffset)}px`);
+    const enemyHeight = els.enemyAvatar.getBoundingClientRect().height || 120;
+    const enemyWidth = els.enemyAvatar.getBoundingClientRect().width || 120;
+    const groundOffset = (Number(getEnemyGroundOffset()) || 0) * getMobileCombatScale();
+    const healthTop = Math.round(Math.max(-12, groundOffset - enemyHeight * 0.16 - 12));
+    const nameTop = Math.round(Math.max(2, groundOffset * 0.68 + 4));
+    els.enemyWrap.style.setProperty("--enemy-health-top", `${healthTop}px`);
+    els.enemyWrap.style.setProperty("--enemy-name-top", `${nameTop}px`);
+    els.enemyWrap.style.setProperty("--enemy-health-width", `${Math.round(Math.max(68, Math.min(124, enemyWidth * 0.48)))}px`);
+    els.enemyHealthText.textContent = `${state.enemy.health} / ${state.enemy.maxHealth}`;
+    els.enemyHealthBar.style.width = `${(state.enemy.health / state.enemy.maxHealth) * 100}%`;
+  } else {
+    els.enemyName.textContent = "Yolda";
+    els.enemyLevel.textContent = `Stage ${state.stage.current}`;
+    els.enemyHealthText.textContent = `${state.stage.enemiesDefeated} / ${state.stage.enemiesRequired}`;
+    els.enemyHealthBar.style.width = "0%";
+  }
   els.xpText.textContent = `${state.hero.xp} / ${state.hero.xpToNext}`;
   els.xpBar.style.width = `${(state.hero.xp / state.hero.xpToNext) * 100}%`;
   els.goldText.textContent = state.gold;
@@ -1980,17 +2575,12 @@ function renderEnemyFrame(now = performance.now()) {
   els.enemyAvatar.style.backgroundPosition = `-${frame * frameDisplayWidth}px 0`;
 }
 
-function loop(now) {
-  if (!state.session.active) {
-    requestAnimationFrame(loop);
-    return;
-  }
-
-  const deltaSeconds = state.lastFrameAt ? Math.min((now - state.lastFrameAt) / 1000, 0.08) : 0;
-  state.lastFrameAt = now;
-
+function runGameStep(now, deltaSeconds) {
+  if (!state.session.active) return;
   updateDeath(now);
   updateActiveEffects();
+  updateStagePhase(now);
+  if (state.stage.phase !== "combat" || !state.enemy) return;
   approachEnemy(deltaSeconds);
   attackEnemy(now);
   enemyAttackHero(now);
@@ -1998,14 +2588,24 @@ function loop(now) {
     state.session.lastAutoSaveAt = now;
     queueSave("Otomatik kayıt");
   }
-  render();
-  renderEnemyFrame(now);
+}
+
+function loop(now) {
+  if (!state.session.active) {
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  if (!document.hidden) {
+    const deltaSeconds = state.lastFrameAt ? Math.min((now - state.lastFrameAt) / 1000, 0.08) : 0;
+    state.lastFrameAt = now;
+    runGameStep(now, deltaSeconds);
+    render();
+    renderEnemyFrame(now);
+  }
+
   requestAnimationFrame(loop);
 }
 
 showAuthMessage("Giriş yap veya kayıt ol.");
 requestAnimationFrame(loop);
-
-
-
-
