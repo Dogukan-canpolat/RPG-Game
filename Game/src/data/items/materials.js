@@ -1,0 +1,31 @@
+export const materialItems = [
+  { id: "stick", name: "Dal Parçası", type: "material", tier: 1, requiredLevel: 1, icon: "assets/item-icons/material-stick.png" },
+  { id: "copper-ore", name: "Bakır Cevheri", type: "material", tier: 1, requiredLevel: 1, icon: "assets/item-icons/material-copper_ore.png" },
+  { id: "copper-ingot", name: "Bakır Külçesi", type: "material", tier: 2, requiredLevel: 1, icon: "assets/item-icons/material-copper_ingot.png" },
+  { id: "iron-ore", name: "Demir Cevheri", type: "material", tier: 2, requiredLevel: 1, icon: "assets/item-icons/material-iron_ore.png" },
+  { id: "iron-ingot", name: "Demir Külçesi", type: "material", tier: 3, requiredLevel: 1, icon: "assets/item-icons/material-iron_ingot.png" },
+  { id: "silver-ore", name: "Gümüş Cevheri", type: "material", tier: 3, requiredLevel: 1, icon: "assets/item-icons/material-silver_ore.png" },
+  { id: "silver-ingot", name: "Gümüş Külçesi", type: "material", tier: 4, requiredLevel: 1, icon: "assets/item-icons/material-silver_ingot.png" },
+  { id: "gold-ore", name: "Altın Cevheri", type: "material", tier: 4, requiredLevel: 1, icon: "assets/item-icons/material-gold_ore.png" },
+  { id: "gold-ingot", name: "Altın Külçesi", type: "material", tier: 5, requiredLevel: 1, icon: "assets/item-icons/material-gold_ingot.png" },
+  { id: "platinum-ore", name: "Platin Cevheri", type: "material", tier: 5, requiredLevel: 1, icon: "assets/item-icons/material-platinum_ore.png" },
+  { id: "platinum-ingot", name: "Platin Külçesi", type: "material", tier: 5, requiredLevel: 1, icon: "assets/item-icons/material-platinum_ingot.png" },
+];
+
+export const salvageMaterialsByTier = {
+  1: ["stick", "copper-ore"],
+  2: ["copper-ingot", "iron-ore"],
+  3: ["iron-ingot", "silver-ore"],
+  4: ["silver-ingot", "gold-ore"],
+  5: ["gold-ingot", "platinum-ore", "platinum-ingot"],
+  6: ["platinum-ingot", "gold-ingot", "platinum-ore"],
+  7: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  8: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  9: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  10: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  11: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  12: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  13: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  14: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+  15: ["platinum-ingot", "platinum-ingot", "gold-ingot"],
+};

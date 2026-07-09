@@ -23,9 +23,12 @@
         <div class="layer layer-8"></div>
         <div class="layer layer-9"></div>
       </div>
-      <form class="auth-panel" id="authForm">
-        <p>RPG Sonsuz Av</p>
-        <h1>Karakterine Giriş Yap</h1>
+      <form class="auth-panel" id="authForm" data-auth-mode="login">
+        <div class="auth-heading" id="authHeading">
+          <p>RPG Sonsuz Av</p>
+          <h1 id="authTitle">Karakterine Giriş Yap</h1>
+          <span id="authSubtitle">Av kaldığı yerden devam etsin.</span>
+        </div>
         <label>
           Kullanıcı adı
           <input id="usernameInput" name="username" autocomplete="username" required minlength="3" maxlength="24" />
@@ -38,7 +41,12 @@
           <button type="submit" data-auth-action="login">Giriş</button>
           <button type="submit" data-auth-action="register">Kayıt Ol</button>
         </div>
-        <span id="authMessage"></span>
+        <span id="authMessage" role="status" aria-live="polite"></span>
+        <div class="auth-tags" aria-label="Oyun özellikleri">
+          <span>Sonsuz Stage</span>
+          <span>Nadir Loot</span>
+          <span>Craft &amp; Bestiary</span>
+        </div>
       </form>
     </section>
 

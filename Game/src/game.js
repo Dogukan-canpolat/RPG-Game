@@ -1,4 +1,4 @@
-import { enemies, enemyPosition } from "./data/enemies.js";
+﻿import { enemies, enemyPosition } from "./data/enemies.js";
 import {
   allLootItems,
   allShopItems,
@@ -27,7 +27,7 @@ import {
   getUpgradeCost as calculateUpgradeCost,
   getXpForNextLevel,
 } from "./systems/economy.js";
-import { createItemHelpers } from "./systems/inventory.js";
+import { createItemHelpers, normalizeItemIconPath } from "./systems/inventory.js";
 import { showToast as pushToast } from "./ui/toast.js";
 
 const {
@@ -443,11 +443,13 @@ function normalizeSavedItem(item) {
       source: item.source,
       locked: item.locked,
       cost: item.cost ?? catalogItem.cost,
+      icon: normalizeItemIconPath(item.icon ?? catalogItem.icon),
     };
   }
   return {
     ...item,
     name: normalizeVisibleText(item.name),
+    icon: normalizeItemIconPath(item.icon),
   };
 }
 
@@ -480,9 +482,8 @@ function getShopTemplatePool() {
     .filter((item) => getItemType(item) !== "material")
     .filter((item) => {
       const tier = getItemTier(item);
-      if (tier >= 7) return heroLevel >= Math.max(400, getItemRequiredLevel(item) - 10);
-      if (tier >= 6) return heroLevel >= Math.max(35, getItemRequiredLevel(item) - 10);
-      return true;
+      const grace = tier >= 10 ? 35 : tier >= 7 ? 24 : tier >= 5 ? 12 : 0;
+      return heroLevel >= Math.max(1, getItemRequiredLevel(item) - grace);
     });
 }
 
@@ -527,8 +528,16 @@ function getMinimumShopCost(item) {
     5: 28000,
     6: 95000,
     7: 650000,
+    8: 1200000,
+    9: 2200000,
+    10: 4000000,
+    11: 7500000,
+    12: 14000000,
+    13: 26000000,
+    14: 48000000,
+    15: 90000000,
   }[tier] || 260;
-  const levelPressure = Math.max(0, getItemRequiredLevel(item) - 1) * 145;
+  const levelPressure = Math.max(0, getItemRequiredLevel(item) - 1) * (tier >= 8 ? 420 : 145);
   const wavePressure = Math.max(0, state.wave - 1) * 55;
   const potionMultiplier = type === "potion" ? 1.55 : 1;
   return Math.round((tierBase + levelPressure + wavePressure) * potionMultiplier);
@@ -547,23 +556,24 @@ function randomChoice(entries) {
 
 function getGeneratedIcon(slot, tier) {
   const icons = {
-    weapon: ["assets/items/Item__16.png", "assets/items/Item__17.png", "assets/items/Item__19.png", "assets/items/Item__18.png", "assets/items/Item__23.png", "assets/items2/Item_23.png", "assets/items3/sword27.png"],
-    armor: ["assets/items/Item__60.png", "assets/items/Item__24.png", "assets/items/Item__59.png", "assets/items/Item__58.png", "assets/items/Item__58.png", "assets/items2/Item_45.png", "assets/items3/staff37.png"],
-    helmet: ["assets/items/Item__55.png", "assets/items/Item__44.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items/Item__53.png", "assets/items2/Item_38.png", "assets/items3/staff35.png"],
-    gloves: ["assets/items/Item__61.png", "assets/items/Item__62.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items/Item__52.png", "assets/items2/Item_43.png", "assets/items3/staff34.png"],
-    ring: ["assets/items/Item__34.png", "assets/items/Item__40.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items/Item__42.png", "assets/items2/Item_46.png", "assets/items3/staff33.png"],
-    boots: ["assets/items/Item__60.png", "assets/items/Item__24.png", "assets/items/Item__59.png", "assets/items/Item__58.png", "assets/items/Item__58.png", "assets/items2/Item_45.png", "assets/items3/staff37.png"],
+    weapon: ["assets/item-icons/pack1-Item__16.png", "assets/item-icons/pack1-Item__17.png", "assets/item-icons/pack1-Item__19.png", "assets/item-icons/pack1-Item__18.png", "assets/item-icons/pack1-Item__23.png", "assets/item-icons/pack2-Item_23.png", "assets/item-icons/pack3-sword27.png"],
+    armor: ["assets/item-icons/pack1-Item__60.png", "assets/item-icons/pack1-Item__24.png", "assets/item-icons/pack1-Item__59.png", "assets/item-icons/pack1-Item__58.png", "assets/item-icons/pack1-Item__58.png", "assets/item-icons/pack2-Item_45.png", "assets/item-icons/pack3-staff37.png"],
+    helmet: ["assets/item-icons/pack1-Item__55.png", "assets/item-icons/pack1-Item__44.png", "assets/item-icons/pack1-Item__53.png", "assets/item-icons/pack1-Item__53.png", "assets/item-icons/pack1-Item__53.png", "assets/item-icons/pack2-Item_38.png", "assets/item-icons/pack3-staff35.png"],
+    gloves: ["assets/item-icons/pack1-Item__61.png", "assets/item-icons/pack1-Item__62.png", "assets/item-icons/pack1-Item__52.png", "assets/item-icons/pack1-Item__52.png", "assets/item-icons/pack1-Item__52.png", "assets/item-icons/pack2-Item_43.png", "assets/item-icons/pack3-staff34.png"],
+    ring: ["assets/item-icons/pack1-Item__34.png", "assets/item-icons/pack1-Item__40.png", "assets/item-icons/pack1-Item__42.png", "assets/item-icons/pack1-Item__42.png", "assets/item-icons/pack1-Item__42.png", "assets/item-icons/pack2-Item_46.png", "assets/item-icons/pack3-staff33.png"],
+    boots: ["assets/item-icons/pack1-Item__60.png", "assets/item-icons/pack1-Item__24.png", "assets/item-icons/pack1-Item__59.png", "assets/item-icons/pack1-Item__58.png", "assets/item-icons/pack1-Item__58.png", "assets/item-icons/pack2-Item_45.png", "assets/item-icons/pack3-staff37.png"],
   };
-  return icons[slot]?.[Math.max(0, tier - 1)] || "assets/items/Item__00.png";
+  const slotIcons = icons[slot] || [];
+  return slotIcons[Math.min(slotIcons.length - 1, Math.max(0, tier - 1))] || "assets/item-icons/pack1-Item__00.png";
 }
 
 function getGeneratedRequiredLevel(tier) {
-  const levelBase = { 1: 1, 2: 8, 3: 24, 4: 65, 5: 140, 6: 275, 7: 405 };
+  const levelBase = { 1: 1, 2: 8, 3: 24, 4: 65, 5: 140, 6: 275, 7: 405, 8: 560, 9: 740, 10: 950, 11: 1200, 12: 1500, 13: 1850, 14: 2250, 15: 2700 };
   return levelBase[tier] || 1;
 }
 
 function getGeneratedTierPower(tier) {
-  const powerBase = { 1: 10, 2: 24, 3: 52, 4: 105, 5: 215, 6: 420, 7: 820 };
+  const powerBase = { 1: 10, 2: 24, 3: 52, 4: 105, 5: 215, 6: 420, 7: 820, 8: 1350, 9: 2200, 10: 3500, 11: 5500, 12: 8500, 13: 13000, 14: 19800, 15: 30000 };
   return powerBase[tier] || 10;
 }
 
@@ -601,7 +611,7 @@ function createGeneratedEquipment(tier, source = "shop", previousCost = 80) {
 }
 
 function createReplacementShopItem(previousItem) {
-  const maxReplacementTier = state.hero.level >= 400 ? 7 : 6;
+  const maxReplacementTier = getUnlockedTierForLevel(state.hero.level + 35);
   const nextTier = Math.min(maxReplacementTier, Math.max(getItemTier(previousItem), getItemTier(previousItem) + (Math.random() > 0.35 ? 1 : 0)));
   const templatePool = getShopTemplatePool().filter((item) => getItemTier(item) >= nextTier && getItemType(item) === getItemType(previousItem));
   const template = templatePool.length > 0 ? randomChoice(templatePool) : null;
@@ -761,6 +771,9 @@ const els = {
   authScreen: document.querySelector("#authScreen"),
   stage: document.querySelector(".stage"),
   authForm: document.querySelector("#authForm"),
+  authTitle: document.querySelector("#authTitle"),
+  authSubtitle: document.querySelector("#authSubtitle"),
+  authButtons: document.querySelectorAll("[data-auth-action]"),
   usernameInput: document.querySelector("#usernameInput"),
   passwordInput: document.querySelector("#passwordInput"),
   authMessage: document.querySelector("#authMessage"),
@@ -826,6 +839,17 @@ const slotLabels = {
   boots: "Bot",
 };
 
+const authModeCopy = {
+  login: {
+    title: "Karakterine Giriş Yap",
+    subtitle: "Av kaldığı yerden devam etsin.",
+  },
+  register: {
+    title: "Yeni Avcı Oluştur",
+    subtitle: "İsmini yaz, sonsuz ava katıl.",
+  },
+};
+
 function getStageWidth() {
   return getCombatStageWidth(els.stage);
 }
@@ -858,7 +882,15 @@ els.enemyAvatar.addEventListener("animationend", (event) => {
 els.authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const action = event.submitter?.dataset.authAction || "login";
+  setAuthMode(action);
   await handleAuth(action);
+});
+
+els.authButtons.forEach((button) => {
+  const mode = button.dataset.authAction || "login";
+  button.addEventListener("mouseenter", () => setAuthMode(mode, false));
+  button.addEventListener("focus", () => setAuthMode(mode, false));
+  button.addEventListener("click", () => setAuthMode(mode));
 });
 
 els.logoutButton.addEventListener("click", async () => {
@@ -870,6 +902,7 @@ els.logoutButton.addEventListener("click", async () => {
   els.authScreen.classList.remove("hidden");
   els.currentUserText.textContent = "Misafir";
   els.saveStatus.textContent = "Giriş bekleniyor";
+  setAuthMode("login", false);
   showAuthMessage("Giriş yap veya kayıt ol.");
 });
 
@@ -913,11 +946,11 @@ async function handleAuth(action) {
   const password = els.passwordInput.value;
 
   if (username.length < 3 || password.length < 4) {
-    showAuthMessage("Kullanıcı adı en az 3, şifre en az 4 karakter olmalı.");
+    showAuthMessage("Kullanıcı adı en az 3, şifre en az 4 karakter olmalı.", "error");
     return;
   }
 
-  els.authMessage.textContent = action === "register" ? "Kayıt açılıyor..." : "Giriş yapılıyor...";
+  showAuthMessage(action === "register" ? "Kayıt açılıyor..." : "Giriş yapılıyor...", "info");
 
   try {
     if (action === "register") {
@@ -926,7 +959,7 @@ async function handleAuth(action) {
     }
     await loginUser(username, password);
   } catch (error) {
-    showAuthMessage(error.message || "İşlem tamamlanamadı.");
+    showAuthMessage(error.message || "İşlem tamamlanamadı.", "error");
   }
 }
 
@@ -965,8 +998,24 @@ async function startSession(user, token) {
   refreshLeaderboard(true);
 }
 
-function showAuthMessage(message) {
+function setAuthMode(mode = "login", animate = true) {
+  const safeMode = mode === "register" ? "register" : "login";
+  const copy = authModeCopy[safeMode];
+  els.authForm.dataset.authMode = safeMode;
+  if (els.authTitle) els.authTitle.textContent = copy.title;
+  if (els.authSubtitle) els.authSubtitle.textContent = copy.subtitle;
+  els.authButtons.forEach((button) => {
+    button.classList.toggle("active-mode", button.dataset.authAction === safeMode);
+  });
+  if (!animate) return;
+  els.authForm.classList.remove("auth-mode-pulse");
+  void els.authForm.offsetWidth;
+  els.authForm.classList.add("auth-mode-pulse");
+}
+
+function showAuthMessage(message, type = "info") {
   els.authMessage.textContent = message;
+  els.authMessage.dataset.type = message ? type : "";
 }
 
 function setSaveStatus(message, priorityMs = 0) {
@@ -1103,23 +1152,41 @@ function canEquipItem(item) {
   return state.hero.level >= getItemRequiredLevel(item);
 }
 
+function getUnlockedTierForLevel(level) {
+  const safeLevel = Math.max(1, Number(level) || 1);
+  const tierUnlockLevels = {
+    1: 1,
+    2: 8,
+    3: 24,
+    4: 65,
+    5: 140,
+    6: 275,
+    7: 405,
+    8: 560,
+    9: 740,
+    10: 950,
+    11: 1200,
+    12: 1500,
+    13: 1850,
+    14: 2250,
+    15: 2700,
+  };
+  return Object.entries(tierUnlockLevels).reduce((maxTier, [tier, requiredLevel]) => (
+    safeLevel >= requiredLevel ? Math.max(maxTier, Number(tier)) : maxTier
+  ), 1);
+}
+
 function applyTierStyle(element, item) {
   const tier = getItemTierConfig(item);
   const tierLevel = getItemTier(item);
   element.style.setProperty("--tier-color", tier.color);
   element.dataset.tier = tierLevel;
-  element.classList.remove("tier-1", "tier-2", "tier-3", "tier-4", "tier-5", "tier-6", "tier-7");
+  for (let index = 1; index <= 15; index += 1) element.classList.remove(`tier-${index}`);
   element.classList.add(`tier-${tierLevel}`);
 }
 
 function chooseLootTier(enemyLevel) {
-  const maxTier = enemyLevel >= 400 ? 7
-    : enemyLevel >= 275 ? 6
-      : enemyLevel >= 140 ? 5
-        : enemyLevel >= 65 ? 4
-          : enemyLevel >= 24 ? 3
-            : enemyLevel >= 8 ? 2
-              : 1;
+  const maxTier = getUnlockedTierForLevel(enemyLevel);
   const entries = Object.entries(tierConfig).filter(([tier]) => Number(tier) <= maxTier);
   const totalWeight = entries.reduce((sum, [, tier]) => sum + tier.dropWeight, 0);
   let roll = Math.random() * totalWeight;
@@ -2607,5 +2674,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+setAuthMode("login", false);
 showAuthMessage("Giriş yap veya kayıt ol.");
 requestAnimationFrame(loop);
+

@@ -1,10 +1,20 @@
+export function normalizeItemIconPath(iconPath) {
+  if (typeof iconPath !== "string") return iconPath;
+  return iconPath
+    .replace("assets/items2/", "assets/item-icons/pack2-")
+    .replace("assets/items3/", "assets/item-icons/pack3-")
+    .replace("assets/items/", "assets/item-icons/pack1-")
+    .replace("assets/boots/", "assets/item-icons/boot-")
+    .replace("assets/materials/", "assets/item-icons/material-");
+}
+
 export function createItemHelpers(itemCatalog, tierConfig) {
   function getCatalogItem(item) {
     return itemCatalog.get(item?.id);
   }
 
   function getItemIcon(item) {
-    return getCatalogItem(item)?.icon || item?.icon || "assets/items/Item__00.png";
+    return normalizeItemIconPath(getCatalogItem(item)?.icon || item?.icon || "assets/item-icons/pack1-Item__00.png");
   }
 
   function getItemRequiredLevel(item) {
@@ -48,3 +58,5 @@ export function createItemHelpers(itemCatalog, tierConfig) {
     getItemQuantity,
   };
 }
+
+

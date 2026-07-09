@@ -1,4 +1,4 @@
-# RPG Sonsuz Av
+﻿# RPG Sonsuz Av
 
 `RPG Sonsuz Av`, tarayıcıda çalışan 2D idle/action RPG prototipidir. Oyun vanilla HTML, CSS ve JavaScript ile yazılmıştır. Sunucu tarafında Node.js kullanılır; kullanıcı ve karakter kayıtları webde değil, proje klasöründeki yerel SQLite veritabanında tutulur.
 
@@ -200,13 +200,14 @@ Sol paneldeki düşman listesine tıklayarak seçilen düşmanı test amaçlı s
 
 ## Item ve Tier Sistemi
 
-Oyunda üç item paketi katalog havuzuna eklenmiştir:
+Oyundaki item görselleri tek klasörde toplanmıştır:
 
-- `assets/items/`: 72 PNG
-- `assets/items2/`: 72 PNG
-- `assets/items3/`: 35 PNG
+- `assets/item-icons/`: 478 PNG
+- Dosya adları kaynak çakışmasını önlemek için `pack1-`, `pack2-`, `pack3-`, `boot-`, `material-`, `fa-` prefixleriyle tutulur.
 
-Toplam katalogda ekipman, iksir ve malzemelerle birlikte 213 item bulunur.
+Toplam katalogda ekipman, iksir ve malzemelerle birlikte 485 item bulunur.
+
+Item isimlerini kolay değiştirmek için [src/data/itemNames.js](src/data/itemNames.js) dosyasındaki `itemNameOverrides` alanını düzenleyebilirsin. Anahtar item id, değer oyunda görünen isimdir.
 
 Tier sistemi:
 
@@ -218,7 +219,15 @@ Tier sistemi:
 | T4 | Destansı | Pahalı ve zor bulunan itemler |
 | T5 | Efsanevi | Çok güçlü, çok nadir |
 | T6 | Çok Efsanevi | Aşırı nadir, yüksek seviye hedef itemleri |
-| T7 | İlahi | 400+ level sonrası açılan, en zor bulunan ve en güçlü itemler |
+| T7 | İlahi | 400+ level bandında açılan üst seviye itemler |
+| T8 | Kadim | 560+ level bandında ağır ekonomi eşiği |
+| T9 | Mistik | 740+ level sonrası çok nadir drop |
+| T10 | Astral | 950+ level sonrası ileri oyun itemleri |
+| T11 | Kozmik | 1200+ level sonrası yüksek güç |
+| T12 | Ebedi | 1500+ level sonrası çok pahalı itemler |
+| T13 | Cehennem | 1850+ level sonrası aşırı nadir |
+| T14 | Goksel | 2250+ level sonrası prestij itemleri |
+| T15 | Mutlak | 2700+ level sonrası en üst hedef itemler |
 
 Tier arttıkça:
 
@@ -228,7 +237,7 @@ Tier arttıkça:
 - Level gereksinimi artar.
 - Parçalama sonucu daha değerli malzeme verir.
 
-T7 itemler 405+ level gerektirir, yalnızca 400+ savaş/karakter bandında havuza girer ve drop ağırlığı diğer tierlere göre aşırı düşüktür.
+T8+ itemler yüksek level kapısına ve çok yüksek dükkan fiyatlarına sahiptir. T15 itemlerin drop ağırlığı sistemdeki en düşük değerdir.
 
 ## Envanter
 
@@ -237,7 +246,7 @@ Envanterdeki itemler kare kartlar halinde görünür. Kartlarda ikon, isim, tier
 Özellikler:
 
 - Itemleri sürükleyerek envanter sırasını değiştirebilirsin.
-- Ekipmanı `Giy` ile takabilir, `Çıkar` ile çıkarabilirsin.
+- Ekipmanı `Giy` ile takabilirsin; giyili eşyalar envanterden gizlenir ve `Kuşanım` alanından çıkarılır.
 - Sol paneldeki `Kuşanım` kartına sürükleyerek de giydirebilirsin.
 - Level gereksinimi yüksek itemler giyilemez.
 - Materyaller miktarlı stack olarak tutulur.
@@ -442,3 +451,4 @@ node --check server.js
 - Nadir drop için özel ekran efekti
 - Ses ayarlarına ayrı efekt/müzik seviyesi
 - Debug düşman test listesini sadece geliştirici modunda gösterme
+
