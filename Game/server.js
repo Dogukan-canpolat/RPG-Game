@@ -398,8 +398,9 @@ function getSavePower(saveData) {
   const damage = getItemStat(hero, "damage") + equipped.reduce((sum, item) => sum + getItemStat(item, "damage"), 0);
   const health = getItemStat(hero, "maxHealth") + (Number(talents.healthBonus) || 0) * 5 + equipped.reduce((sum, item) => sum + getItemStat(item, "maxHealth"), 0);
   const speed = getItemStat(hero, "attackSpeed") + equipped.reduce((sum, item) => sum + getItemStat(item, "attackSpeed"), 0);
+  const criticalChance = Math.min(0.5, 0.12 + equipped.reduce((sum, item) => sum + getItemStat(item, "criticalChance"), 0));
   const talentPower = (Number(talents.criticalDamage) || 0) * 8 + (Number(talents.luck) || 0) * 5 + (Number(talents.shopDiscount) || 0) * 4;
-  return Math.round((Number(hero.level) || 1) * 85 + damage * 14 + health * 0.85 + speed * 140 + talentPower);
+  return Math.round((Number(hero.level) || 1) * 85 + damage * 14 + health * 0.85 + speed * 140 + criticalChance * 900 + talentPower);
 }
 
 function leaderboardUsers(users) {

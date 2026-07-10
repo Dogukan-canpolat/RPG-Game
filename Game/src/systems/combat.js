@@ -16,7 +16,12 @@ export function getMobileCombatScale(stageWidth) {
 }
 
 export function getEnemyPosition(stageWidth, enemyPosition) {
-  if (stageWidth >= 640) return enemyPosition;
+  if (stageWidth >= 640) {
+    return {
+      approachSpan: clamp(stageWidth * 0.36, 250, enemyPosition.approachSpan),
+      contactOffset: -clamp(stageWidth * 0.3, 180, Math.abs(enemyPosition.contactOffset)),
+    };
+  }
 
   return {
     approachSpan: clamp(stageWidth * 0.42, 115, enemyPosition.approachSpan),

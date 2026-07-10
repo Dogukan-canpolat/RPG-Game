@@ -1,4 +1,4 @@
-import { buildEquipment, buildPotion, indexText, slotLabels } from "./builders.js";
+import { buildEquipment, buildFood, buildPotion, indexText, slotLabels } from "./builders.js";
 import { materialItems, salvageMaterialsByTier } from "./materials.js";
 import { tierConfig, tierFromGroupPosition, tierPower } from "./tiers.js";
 
@@ -31,6 +31,22 @@ export const lootItems = [
   buildEquipment({ id: "warden-plate", name: "Bekçi Zırhı", slot: "armor", tier: 5, rank: 1, icon: "assets/item-icons/pack1-Item__58.png" }),
   buildPotion({ id: "wild-power-potion", name: "Vahşi Güç İksiri", tier: 3, rank: 1, profile: "power", icon: "assets/item-icons/pack1-Item__29.png" }),
   buildPotion({ id: "ancient-haste-potion", name: "Kadim Hız İksiri", tier: 4, rank: 0, profile: "haste", icon: "assets/item-icons/pack1-Item__30.png" }),
+];
+
+const consumableItems = [
+  buildPotion({ id: "item-fa281", name: "İksir", tier: 3, rank: 0, profile: "guard", icon: "assets/item-icons/fa-fa281.png" }),
+  buildPotion({ id: "item-fa468", name: "İksir", tier: 5, rank: 0, profile: "power", icon: "assets/item-icons/fa-fa468.png" }),
+  buildPotion({ id: "item-fa469", name: "İksir", tier: 7, rank: 1, profile: "power", icon: "assets/item-icons/fa-fa469.png" }),
+  buildPotion({ id: "item-fa505", name: "İksir", tier: 8, rank: 0, profile: "guard", icon: "assets/item-icons/fa-fa505.png" }),
+  buildPotion({ id: "item-fa470", name: "İksir", tier: 9, rank: 1, profile: "haste", icon: "assets/item-icons/fa-fa470.png" }),
+  buildPotion({ id: "item-fa471", name: "İksir", tier: 11, rank: 0, profile: "guard", icon: "assets/item-icons/fa-fa471.png" }),
+  buildPotion({ id: "item-fa506", name: "İksir", tier: 12, rank: 1, profile: "haste", icon: "assets/item-icons/fa-fa506.png" }),
+  buildPotion({ id: "item-fa486", name: "İksir", tier: 13, rank: 2, profile: "power", icon: "assets/item-icons/fa-fa486.png" }),
+  buildPotion({ id: "item-fa502", name: "İksir", tier: 15, rank: 2, profile: "guard", icon: "assets/item-icons/fa-fa502.png" }),
+  buildFood({ id: "item-fa434", name: "Yiyecek", tier: 1, rank: 0, profile: "guard", icon: "assets/item-icons/fa-fa434.png" }),
+  buildFood({ id: "item-fa567", name: "Yiyecek", tier: 2, rank: 0, profile: "haste", icon: "assets/item-icons/fa-fa567.png" }),
+  buildFood({ id: "item-fa564", name: "Yiyecek", tier: 3, rank: 1, profile: "power", icon: "assets/item-icons/fa-fa564.png" }),
+  buildFood({ id: "item-fa517", name: "Yiyecek", tier: 4, rank: 0, effect: { criticalChance: 0.01 }, icon: "assets/item-icons/fa-fa517.png" }),
 ];
 
 const baseGeneratedData = [
@@ -217,18 +233,19 @@ function createNumberedIconItemsForGroup({ start, end, slot, type = "equipment",
 const numberedIconItems = [
   ...createNumberedIconItemsForGroup({ start: 1665, end: 1808, slot: "weapon", nameBase: "Silah" }),
   ...createNumberedIconItemsForGroup({ start: 1825, end: 1840, slot: "ring", nameBase: "Tilsim" }),
-  ...createNumberedIconItemsForGroup({ start: 1841, end: 1842, type: "potion", profile: "haste", nameBase: "Iksir" }),
+  ...createNumberedIconItemsForGroup({ start: 1841, end: 1842, slot: "ring", nameBase: "Yuzuk" }),
   ...createNumberedIconItemsForGroup({ start: 1843, end: 1852, slot: "ring", nameBase: "Yuzuk" }),
   ...createNumberedIconItemsForGroup({ start: 1853, end: 1856, slot: "boots", nameBase: "Bot" }),
   ...createNumberedIconItemsForGroup({ start: 1857, end: 1883, slot: "armor", nameBase: "Zirh" }),
   ...createNumberedIconItemsForGroup({ start: 1884, end: 1887, slot: "helmet", nameBase: "Baslik" }),
   ...createNumberedIconItemsForGroup({ start: 1888, end: 1904, slot: "armor", nameBase: "Robe" }),
-  ...createNumberedIconItemsForGroup({ start: 1905, end: 1920, slot: "ring", nameBase: "Kolye" }),
+  ...createNumberedIconItemsForGroup({ start: 1905, end: 1920, slot: "helmet", nameBase: "Migfer" }),
   ...createNumberedIconItemsForGroup({ start: 1921, end: 1934, slot: "gloves", nameBase: "Eldiven" }),
   ...createNumberedIconItemsForGroup({ start: 1935, end: 1952, slot: "boots", nameBase: "Bot" }),
 ];
 
 const generatedLootItems = [
+  ...consumableItems,
   ...baseGeneratedItems,
   ...classicIconItems,
   ...extraIconItems,

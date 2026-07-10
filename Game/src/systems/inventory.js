@@ -22,7 +22,13 @@ export function createItemHelpers(itemCatalog, tierConfig) {
   }
 
   function getItemTier(item) {
-    return getCatalogItem(item)?.tier || item?.tier || 1;
+    const catalogItem = getCatalogItem(item);
+    const itemType = catalogItem?.type || item?.type;
+    const craftTier = Number(item?.craftTier);
+    if (itemType === "material" && Number.isFinite(craftTier)) {
+      return Math.min(15, Math.max(1, Math.round(craftTier)));
+    }
+    return catalogItem?.tier || item?.tier || 1;
   }
 
   function getItemTierConfig(item) {

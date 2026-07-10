@@ -12,7 +12,7 @@ export const tierConfig = {
   11: { label: "Kozmik", color: "#ff74f8", dropWeight: 0.0028, gemMin: 360, gemMax: 500 },
   12: { label: "Ebedi", color: "#ff8f5e", dropWeight: 0.0011, gemMin: 540, gemMax: 740 },
   13: { label: "Cehennem", color: "#ff3d3d", dropWeight: 0.00045, gemMin: 800, gemMax: 1050 },
-  14: { label: "Goksel", color: "#fff06a", dropWeight: 0.00018, gemMin: 1150, gemMax: 1500 },
+  14: { label: "Göksel", color: "#fff06a", dropWeight: 0.00018, gemMin: 1150, gemMax: 1500 },
   15: { label: "Mutlak", color: "#ffffff", dropWeight: 0.00006, gemMin: 1700, gemMax: 2200 },
 };
 

@@ -57,6 +57,21 @@ function speedStat(value) {
   return Number(Math.max(0.01, value).toFixed(2));
 }
 
+function criticalChanceStat(def, seed) {
+  if (Number.isFinite(def.criticalChance)) {
+    return Number(Math.max(0, def.criticalChance).toFixed(3));
+  }
+
+  const tier = Math.max(1, Number(def.tier) || 1);
+  const rank = Math.max(0, Number(def.rank) || 0);
+  const slotBias = def.slot === "ring" ? 0.08 : def.slot === "weapon" || def.slot === "gloves" ? 0.05 : 0;
+  const eligibility = Math.min(0.55, 0.14 + tier * 0.024 + slotBias);
+  if (uniqueFactor(seed, 71, 0, 1) > eligibility) return undefined;
+
+  const base = 0.003 + tier * 0.0009 + rank * 0.00015;
+  return Number(Math.min(0.04, base * uniqueFactor(seed, 73, 1, 1.75)).toFixed(3));
+}
+
 export function buildEquipment(def) {
   const rank = def.rank || 0;
   const tier = def.tier;
@@ -77,6 +92,7 @@ export function buildEquipment(def) {
     icon: def.icon,
     cost: def.cost,
   };
+  item.criticalChance = criticalChanceStat(def, seed);
 
   if (slot === "weapon") {
     item.damage = def.damage ?? variedDamage(power, 3);
@@ -109,7 +125,7 @@ export function buildPotion(def) {
   const power = tierPower(tier, rank);
   const seed = hashText(`${def.id}|${def.name}|potion|${def.profile || "power"}|${tier}|${rank}|${def.icon || ""}`);
   const effectFactor = uniqueFactor(seed, 61, 0.88, 1.2);
-  const durationFactor = uniqueFactor(seed, 67, 0.84, 1.24);
+  const durationFactor = uniqueFactor(seed, 67, 0.9, 1.15);
   const effect = def.effect || (
     def.profile === "haste"
       ? { attackSpeed: speedStat((0.18 + tier * 0.055 + rank * 0.01) * effectFactor) }
@@ -126,7 +142,35 @@ export function buildPotion(def) {
     requiredLevel: def.requiredLevel ?? requiredLevel(tier, rank),
     cost: def.cost,
     effect,
-    durationMs: def.durationMs ?? Math.round((30000 + tier * 7000 + rank * 2500) * durationFactor),
+    durationMs: def.durationMs ?? Math.round((90000 + tier * 14000 + rank * 4000) * durationFactor),
+    icon: def.icon,
+  };
+}
+
+export function buildFood(def) {
+  const rank = def.rank || 0;
+  const tier = def.tier;
+  const power = tierPower(tier, rank);
+  const seed = hashText(`${def.id}|${def.name}|food|${def.profile || "power"}|${tier}|${rank}|${def.icon || ""}`);
+  const effectFactor = uniqueFactor(seed, 79, 0.88, 1.12);
+  const durationFactor = uniqueFactor(seed, 83, 0.9, 1.1);
+  const effect = def.effect || (
+    def.profile === "haste"
+      ? { attackSpeed: speedStat((0.06 + tier * 0.016 + rank * 0.004) * effectFactor) }
+      : def.profile === "guard"
+        ? { maxHealth: roundStat(power * 0.75 * effectFactor) }
+        : { damage: roundStat(power * 0.25 * effectFactor) }
+  );
+
+  return {
+    id: def.id,
+    name: getItemName(def.id, def.name),
+    type: "food",
+    tier,
+    requiredLevel: def.requiredLevel ?? requiredLevel(tier, rank),
+    cost: def.cost,
+    effect,
+    durationMs: def.durationMs ?? Math.round((20000 + tier * 3000 + rank * 1000) * durationFactor),
     icon: def.icon,
   };
 }

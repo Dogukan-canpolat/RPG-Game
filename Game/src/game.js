@@ -342,28 +342,35 @@ function findMaterialTemplate(id) {
   return materialItems.find((item) => item.id === id) || materialItems[1];
 }
 
-function createMaterialStack(materialId, quantity) {
+function createMaterialStack(materialId, quantity, craftTier = null) {
   const template = findMaterialTemplate(materialId);
   return {
     ...template,
     uid: crypto.randomUUID(),
     quantity,
+    craftTier: craftTier == null ? undefined : clamp(Math.round(Number(craftTier) || template.tier), 1, 15),
     source: "salvage",
   };
 }
 
-function addMaterialToInventory(materialId, quantity, source = "salvage") {
+function addMaterialToInventory(materialId, quantity, source = "salvage", craftTier = null) {
   const amount = Math.max(0, Math.floor(Number(quantity) || 0));
   if (amount <= 0) return null;
+  const template = findMaterialTemplate(materialId);
+  const resolvedTier = craftTier == null ? template.tier : clamp(Math.round(Number(craftTier) || template.tier), 1, 15);
 
-  const existing = state.inventory.find((item) => item.id === materialId && getItemType(item) === "material");
+  const existing = state.inventory.find((item) => (
+    item.id === materialId
+    && getItemType(item) === "material"
+    && getItemTier(item) === resolvedTier
+  ));
   if (existing) {
     existing.quantity = getItemQuantity(existing) + amount;
     existing.source = existing.source || source;
     return existing;
   }
 
-  const stack = createMaterialStack(materialId, amount);
+  const stack = createMaterialStack(materialId, amount, resolvedTier);
   stack.source = source;
   state.inventory.push(stack);
   return stack;
@@ -379,7 +386,8 @@ function compactMaterialStacks() {
       return;
     }
 
-    const existing = materialStacks.get(item.id);
+    const stackKey = `${item.id}:${getItemTier(item)}`;
+    const existing = materialStacks.get(stackKey);
     if (existing) {
       existing.quantity = getItemQuantity(existing) + getItemQuantity(item);
       state.craftingSlots = state.craftingSlots.map((slotUid) => (slotUid === item.uid ? existing.uid : slotUid));
@@ -387,7 +395,7 @@ function compactMaterialStacks() {
     }
 
     item.quantity = getItemQuantity(item);
-    materialStacks.set(item.id, item);
+    materialStacks.set(stackKey, item);
     compactedInventory.push(item);
   });
 
@@ -475,6 +483,13 @@ function createStockItem(item) {
   return { ...item, stockId: crypto.randomUUID() };
 }
 
+function getConsumableWeight(item) {
+  const type = getItemType(item);
+  if (type === "food") return 4;
+  if (type === "potion") return 1 / 2.4;
+  return 1;
+}
+
 // Dükkan havuzu: sabit itemler + paket itemleri, yüksek tierler için seviye kapısı.
 function getShopTemplatePool() {
   const heroLevel = Math.max(1, Number(state.hero.level) || 1);
@@ -492,13 +507,13 @@ function chooseShopTemplate(excludedIds = new Set()) {
   const candidates = pool.length > 0 ? pool : getShopTemplatePool();
   const totalWeight = candidates.reduce((sum, item) => {
     const tierWeight = tierConfig[getItemTier(item)]?.dropWeight || 1;
-    return sum + Math.max(1, Math.round(tierWeight / (getItemType(item) === "potion" ? 2.4 : 1)));
+    return sum + Math.max(0.000001, tierWeight * getConsumableWeight(item));
   }, 0);
   let roll = Math.random() * totalWeight;
 
   for (const item of candidates) {
     const tierWeight = tierConfig[getItemTier(item)]?.dropWeight || 1;
-    roll -= Math.max(1, Math.round(tierWeight / (getItemType(item) === "potion" ? 2.4 : 1)));
+    roll -= Math.max(0.000001, tierWeight * getConsumableWeight(item));
     if (roll <= 0) return item;
   }
 
@@ -539,8 +554,8 @@ function getMinimumShopCost(item) {
   }[tier] || 260;
   const levelPressure = Math.max(0, getItemRequiredLevel(item) - 1) * (tier >= 8 ? 420 : 145);
   const wavePressure = Math.max(0, state.wave - 1) * 55;
-  const potionMultiplier = type === "potion" ? 1.55 : 1;
-  return Math.round((tierBase + levelPressure + wavePressure) * potionMultiplier);
+  const typeMultiplier = type === "potion" ? 1.55 : type === "food" ? 0.55 : 1;
+  return Math.round((tierBase + levelPressure + wavePressure) * typeMultiplier);
 }
 
 function rebalanceShopItem(item) {
@@ -607,6 +622,11 @@ function createGeneratedEquipment(tier, source = "shop", previousCost = 80) {
     if (tier >= 5) item.attackSpeed = Number((0.08 + tier * 0.022).toFixed(2));
   }
 
+  const criticalEligibility = Math.min(0.55, 0.14 + tier * 0.024 + (slot === "ring" ? 0.08 : slot === "weapon" || slot === "gloves" ? 0.05 : 0));
+  if (Math.random() < criticalEligibility) {
+    item.criticalChance = Number(Math.min(0.04, (0.003 + tier * 0.0009) * randomBetween(1, 1.75)).toFixed(3));
+  }
+
   return item;
 }
 
@@ -632,22 +652,6 @@ function refreshShopStock(stock) {
     if (!template) break;
     usedIds.add(template.id);
     normalized.push(createStockItem(rebalanceShopItem(template)));
-  }
-
-  let packTwoCount = normalized.filter((item) => item.id?.startsWith("pack2-")).length;
-  for (let index = normalized.length - 1; index >= 0 && packTwoCount < 4; index -= 1) {
-    if (normalized[index].id?.startsWith("pack2-")) continue;
-    const template = chooseShopTemplate(usedIds);
-    if (!template?.id?.startsWith("pack2-")) {
-      const directPackTemplate = allLootItems.find((item) => item.id?.startsWith("pack2-") && !usedIds.has(item.id) && getItemTier(item) < 6);
-      if (!directPackTemplate) break;
-      usedIds.add(directPackTemplate.id);
-      normalized[index] = createStockItem(rebalanceShopItem(directPackTemplate));
-    } else {
-      usedIds.add(template.id);
-      normalized[index] = createStockItem(rebalanceShopItem(template));
-    }
-    packTwoCount += 1;
   }
 
   return normalized;
@@ -703,7 +707,16 @@ function loadSaveData(saveData) {
   state.inventory = Array.isArray(saveData.inventory) ? saveData.inventory : [];
   migrateSavedGemsToInventory(Number(saveData.gems) || 0);
   state.gems = 0;
-  state.equipped = Object.fromEntries(Object.entries(saveData.equipped || {}).map(([slot, item]) => [slot, normalizeSavedItem(item)]));
+  state.equipped = Object.entries(saveData.equipped || {}).reduce((equipped, [savedSlot, savedItem]) => {
+    const item = normalizeSavedItem(savedItem);
+    if (!item) return equipped;
+
+    const targetSlot = item.slot || savedSlot;
+    if (!equipped[targetSlot] || savedSlot === targetSlot) {
+      equipped[targetSlot] = item;
+    }
+    return equipped;
+  }, {});
   state.shopStock = Array.isArray(saveData.shopStock) && saveData.shopStock.length > 0
     ? refreshShopStock(saveData.shopStock)
     : createInitialShopStock();
@@ -1143,6 +1156,10 @@ function getHeroAttackSpeed() {
   return state.hero.attackSpeed + getItemBonus("attackSpeed") + getEffectBonus("attackSpeed");
 }
 
+function getHeroCriticalChance() {
+  return clamp(0.12 + getItemBonus("criticalChance") + getEffectBonus("criticalChance"), 0, 0.5);
+}
+
 function getUpgradeCost(upgradeKey) {
   const upgrade = upgradeConfig[upgradeKey];
   return calculateUpgradeCost(upgrade, state.hero.stats[upgradeKey] || 0);
@@ -1432,7 +1449,7 @@ function attackEnemy(now) {
   if (now - state.lastAttackAt < interval) return;
 
   state.lastAttackAt = now;
-  const isCritical = Math.random() < 0.12;
+  const isCritical = Math.random() < getHeroCriticalChance();
   const criticalMultiplier = isCritical ? randomBetween(1.55, 1.9) * getCriticalDamageMultiplier() : 1;
   const damage = Math.round(getHeroDamage() * randomBetween(0.9, 1.15) * criticalMultiplier);
   state.enemy.health = Math.max(0, state.enemy.health - damage);
@@ -1524,6 +1541,19 @@ function getLootLevelModifier(enemyLevel) {
   return calculateLootLevelModifier(enemyLevel, state.hero.level);
 }
 
+function chooseLootTemplate(pool) {
+  const weightedPool = pool.map((item) => ({ item, weight: getConsumableWeight(item) }));
+  const totalWeight = weightedPool.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const entry of weightedPool) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry.item;
+  }
+
+  return pool[0];
+}
+
 function rollLoot(enemyLevel) {
   const levelModifier = getLootLevelModifier(enemyLevel);
   const luckMultiplier = 1 + getLuckDropBonus();
@@ -1535,7 +1565,7 @@ function rollLoot(enemyLevel) {
   const selectedTier = chooseLootTier(enemyLevel);
   const tierPool = allLootItems.filter((item) => getItemTier(item) === selectedTier);
   const pool = tierPool.length > 0 ? tierPool : allLootItems;
-  const template = pool[Math.floor(Math.random() * pool.length)];
+  const template = chooseLootTemplate(pool);
   state.inventory.push({
     ...template,
     uid: crypto.randomUUID(),
@@ -1668,9 +1698,14 @@ function refreshShopForGold() {
   render();
 }
 
-function usePotion(uid) {
+function useConsumable(uid) {
   const item = state.inventory.find((entry) => entry.uid === uid);
-  if (!item || getItemType(item) !== "potion") return;
+  const itemType = getItemType(item);
+  if (!item || (itemType !== "potion" && itemType !== "food")) return;
+  if (isItemLocked(item)) {
+    setSaveStatus("Kilitli tüketilebilir kullanılamaz");
+    return;
+  }
   if (!canEquipItem(item)) {
     setSaveStatus(`Seviye ${getItemRequiredLevel(item)} gerekli`);
     return;
@@ -1688,7 +1723,8 @@ function usePotion(uid) {
   });
   state.hero.health = Math.min(getHeroMaxHealth(), state.hero.health + (getItemEffect(removedItem).maxHealth || 0));
   state.panelsDirty = true;
-  queueSave("İksir içildi");
+  setSaveStatus(itemType === "food" ? "Yiyecek tüketildi" : "İksir içildi");
+  queueSave(itemType === "food" ? "Yiyecek tüketildi" : "İksir içildi");
   render();
 }
 
@@ -1719,7 +1755,7 @@ function salvageItem(uid) {
   const gainedMaterialCount = 1;
   const materialId = chooseSalvageMaterial(getItemTier(item));
   const material = findMaterialTemplate(materialId);
-  addMaterialToInventory(materialId, gainedMaterialCount);
+  addMaterialToInventory(materialId, gainedMaterialCount, "salvage", getItemTier(item));
   state.panelsDirty = true;
   setSaveStatus(`${material.name} x${gainedMaterialCount} envantere eklendi`);
   queueSave("Item parcalandi");
@@ -1787,16 +1823,18 @@ function getItemComparisonHtml(item) {
     return `${title}<div class="compare-row"><span>Tür</span><b>Malzeme</b></div>`;
   }
 
-  if (type === "potion") {
+  if (type === "potion" || type === "food") {
     const effect = getItemEffect(item);
     const rows = [
       ["Hasar", effect.damage || 0],
       ["Can", effect.maxHealth || 0],
       ["Hız", effect.attackSpeed ? Math.round(effect.attackSpeed * 100) : 0, "%"],
+      ["Kritik Şansı", effect.criticalChance ? Number((effect.criticalChance * 100).toFixed(1)) : 0, "%"],
     ].filter(([, value]) => value);
     return `${title}${rows.map(([label, value, suffix = ""]) => `
       <div class="compare-row"><span>${label}</span><b>${formatStatDelta(value, suffix)}</b></div>
-    `).join("") || '<div class="compare-row"><span>Etki</span><b>Yok</b></div>'}`;
+    `).join("") || '<div class="compare-row"><span>Etki</span><b>Yok</b></div>'}
+      <div class="compare-row"><span>Süre</span><b>${durationText(getItemDuration(item))}</b></div>`;
   }
 
   const equipped = state.equipped[item.slot];
@@ -1804,10 +1842,12 @@ function getItemComparisonHtml(item) {
     ["Hasar", "damage", ""],
     ["Can", "maxHealth", ""],
     ["Hız", "attackSpeed", "%"],
+    ["Kritik Şansı", "criticalChance", "%"],
   ].map(([label, key, suffix]) => {
-    const value = key === "attackSpeed" ? Math.round(getComparableStat(item, key) * 100) : getComparableStat(item, key);
+    const isPercent = key === "attackSpeed" || key === "criticalChance";
+    const value = isPercent ? Math.round(getComparableStat(item, key) * 1000) / 10 : getComparableStat(item, key);
     const current = equipped
-      ? (key === "attackSpeed" ? Math.round(getComparableStat(equipped, key) * 100) : getComparableStat(equipped, key))
+      ? (isPercent ? Math.round(getComparableStat(equipped, key) * 1000) / 10 : getComparableStat(equipped, key))
       : 0;
     return [label, value, value - current, suffix];
   });
@@ -1952,7 +1992,7 @@ function consumeCraftSlots() {
 function chooseCraftTier(slotItems) {
   const averageTier = slotItems.reduce((sum, item) => sum + getItemTier(item), 0) / slotItems.length;
   const drift = Math.random() > 0.78 ? 1 : Math.random() < 0.18 ? -1 : 0;
-  return clamp(Math.round(averageTier) + drift, 1, 7);
+  return clamp(Math.round(averageTier) + drift, 1, 15);
 }
 
 function createRandomCraftedItem(slotItems) {
@@ -2078,6 +2118,7 @@ function bonusParts(source) {
     source.damage ? `+${source.damage} hasar` : "",
     source.attackSpeed ? `+${Math.round(source.attackSpeed * 100)}% hiz` : "",
     source.maxHealth ? `+${source.maxHealth} can` : "",
+    source.criticalChance ? `+${(source.criticalChance * 100).toFixed(1)}% kritik` : "",
   ].filter(Boolean);
 }
 
@@ -2091,7 +2132,7 @@ function itemBonusText(item) {
 
   if (getItemType(item) === "material") {
     parts.push("Parca");
-  } else if (getItemType(item) === "potion") {
+  } else if (getItemType(item) === "potion" || getItemType(item) === "food") {
     parts.push(...bonusParts(getItemEffect(item)), durationText(getItemDuration(item)));
   } else {
     parts.push(...bonusParts(item));
@@ -2103,7 +2144,7 @@ function itemBonusText(item) {
 function compactItemMeta(item) {
   const tier = getItemTierConfig(item);
   const type = getItemType(item);
-  const typeLabel = type === "material" ? "Malzeme" : type === "potion" ? "İksir" : slotLabels[item.slot] || "Ekipman";
+  const typeLabel = type === "material" ? "Malzeme" : type === "potion" ? "İksir" : type === "food" ? "Yiyecek" : slotLabels[item.slot] || "Ekipman";
   return `T${getItemTier(item)} ${tier.label} / Lv ${getItemRequiredLevel(item)} / ${typeLabel}`;
 }
 
@@ -2182,7 +2223,7 @@ function renderTalentTree() {
 }
 
 function getHeroPower() {
-  return Math.round(state.hero.level * 85 + getHeroDamage() * 14 + getHeroMaxHealth() * 0.85 + getHeroAttackSpeed() * 140 + getTalentBonus("criticalDamage") * 500 + getLuckDropBonus() * 320);
+  return Math.round(state.hero.level * 85 + getHeroDamage() * 14 + getHeroMaxHealth() * 0.85 + getHeroAttackSpeed() * 140 + getHeroCriticalChance() * 900 + getTalentBonus("criticalDamage") * 500 + getLuckDropBonus() * 320);
 }
 
 function renderEquippedSummary() {
@@ -2192,7 +2233,7 @@ function renderEquippedSummary() {
   powerRow.innerHTML = `
     <span>Toplam Güç</span>
     <strong>${getHeroPower()}</strong>
-    <small>${Math.round(getHeroDamage())} hasar / ${getHeroMaxHealth()} can / ${getHeroAttackSpeed().toFixed(2)}/sn</small>
+    <small>${Math.round(getHeroDamage())} hasar / ${getHeroMaxHealth()} can / ${getHeroAttackSpeed().toFixed(2)}/sn / %${(getHeroCriticalChance() * 100).toFixed(1)} kritik</small>
   `;
   els.equippedSummary.append(powerRow);
   renderEquipmentDoll(els.equippedSummary);
@@ -2294,6 +2335,7 @@ function renderStatusPanel() {
     ["Can", `${Math.round(state.hero.health)} / ${maxHealth}`],
     ["Ortalama Hasar", Math.round(getHeroDamage())],
     ["Saldırı Hızı", `${getHeroAttackSpeed().toFixed(2)}/sn`],
+    ["Kritik Şansı", `%${(getHeroCriticalChance() * 100).toFixed(1)}`],
     ["Yetenek Puanı", Math.max(0, Number(state.hero.skillPoints) || 0)],
     ["Kritik Hasar", `+${Math.round(getTalentBonus("criticalDamage") * 100)}%`],
     ["Dükkan İndirimi", `-${(getShopDiscountRate() * 100).toFixed(1)}%`],
@@ -2305,7 +2347,10 @@ function renderStatusPanel() {
   ];
 
   const phaseText = state.stage.phase === "clear" ? "Stage tamamlandı" : state.stage.phase === "travel" ? "Yürüyor" : "Savaşta";
-  els.statusHint.textContent = state.activeEffects.length > 0 ? `${phaseText} / ${state.activeEffects.length} iksir aktif` : phaseText;
+  const activeEffectText = state.activeEffects
+    .map((effect) => `${effect.name} ${Math.max(0, Math.ceil((effect.endsAt - Date.now()) / 1000))} sn`)
+    .join(" / ");
+  els.statusHint.textContent = activeEffectText ? `${phaseText} / ${activeEffectText}` : phaseText;
   els.statusGrid.innerHTML = rows.map(([label, value]) => `
     <div class="status-row">
       <span>${label}</span>
@@ -2356,6 +2401,7 @@ function renderInventory() {
   visibleInventory.forEach((item) => {
     const itemType = getItemType(item);
     const isMaterial = itemType === "material";
+    const isConsumable = itemType === "potion" || itemType === "food";
     const locked = isItemLocked(item);
     const levelLocked = !canEquipItem(item);
     const row = document.createElement("div");
@@ -2363,13 +2409,13 @@ function renderInventory() {
     row.draggable = true;
     row.dataset.uid = item.uid;
     applyTierStyle(row, item);
-    const primaryText = itemType === "potion" ? "Ic" : levelLocked ? `Lv ${getItemRequiredLevel(item)}` : "Giy";
+    const primaryText = itemType === "potion" ? "İç" : itemType === "food" ? "Ye" : levelLocked ? `Lv ${getItemRequiredLevel(item)}` : "Giy";
     const itemName = item.name;
     const quantityBadge = isMaterial ? `<span class="item-quantity">${getItemQuantity(item)}x</span>` : "";
     const lockButton = `<button type="button" data-action="lock">${locked ? "Aç" : "Kilitle"}</button>`;
     const actionsHtml = isMaterial
       ? `<button type="button" data-action="craft" ${locked ? "disabled" : ""}>Ekle</button>${lockButton}<button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`
-      : `<button type="button" data-action="primary" ${levelLocked ? "disabled" : ""}>${primaryText}</button>
+      : `<button type="button" data-action="primary" ${levelLocked || (isConsumable && locked) ? "disabled" : ""}>${primaryText}</button>
         ${lockButton}
         <button type="button" data-action="salvage" ${locked ? "disabled" : ""}>Parcala</button><button type="button" data-action="destroy" ${locked ? "disabled" : ""}>Yok Et</button>`;
     row.innerHTML = `
@@ -2409,8 +2455,8 @@ function renderInventory() {
       document.querySelectorAll(".item.drag-over").forEach((element) => element.classList.remove("drag-over"));
     });
     row.querySelector("[data-action='primary']")?.addEventListener("click", () => {
-      if (itemType === "potion") {
-        usePotion(item.uid);
+      if (itemType === "potion" || itemType === "food") {
+        useConsumable(item.uid);
         return;
       }
       equipItem(item.uid);
@@ -2465,7 +2511,7 @@ function renderRecipeList() {
 
   if (slotItems.length === 3) {
     const averageTier = slotItems.reduce((sum, item) => sum + getItemTier(item), 0) / slotItems.length;
-    const tier = clamp(Math.round(averageTier), 1, 7);
+    const tier = clamp(Math.round(averageTier), 1, 15);
     row.style.setProperty("--tier-color", tierConfig[tier].color);
     row.innerHTML = `
       <strong>Rastgele T${tier} item</strong>
@@ -2583,14 +2629,15 @@ function render() {
     els.enemyInitial.textContent = "";
     const enemyPositionForViewport = getEnemyPosition();
     els.enemyWrap.style.setProperty("--enemy-offset", `${Math.round(state.enemy.distance * enemyPositionForViewport.approachSpan + enemyPositionForViewport.contactOffset)}px`);
-    const enemyHeight = els.enemyAvatar.getBoundingClientRect().height || 120;
-    const enemyWidth = els.enemyAvatar.getBoundingClientRect().width || 120;
-    const groundOffset = (Number(getEnemyGroundOffset()) || 0) * getMobileCombatScale();
-    const healthTop = Math.round(Math.max(-12, groundOffset - enemyHeight * 0.16 - 12));
-    const nameTop = Math.round(Math.max(2, groundOffset * 0.68 + 4));
+    const renderScale = getMobileCombatScale();
+    const animName = getEnemyAnimationName();
+    const anim = state.enemy.animations[animName] || state.enemy.animations.idle;
+    const healthTop = Math.round((anim.healthTop ?? state.enemy.healthTop ?? -8) * renderScale);
+    const nameTop = Math.round((anim.nameOffset ?? state.enemy.nameOffset ?? 4) * renderScale);
+    const healthWidth = Math.round((state.enemy.healthWidth || 92) * renderScale);
     els.enemyWrap.style.setProperty("--enemy-health-top", `${healthTop}px`);
     els.enemyWrap.style.setProperty("--enemy-name-top", `${nameTop}px`);
-    els.enemyWrap.style.setProperty("--enemy-health-width", `${Math.round(Math.max(68, Math.min(124, enemyWidth * 0.48)))}px`);
+    els.enemyWrap.style.setProperty("--enemy-health-width", `${Math.max(58, healthWidth)}px`);
     els.enemyHealthText.textContent = `${state.enemy.health} / ${state.enemy.maxHealth}`;
     els.enemyHealthBar.style.width = `${(state.enemy.health / state.enemy.maxHealth) * 100}%`;
   } else {
@@ -2604,7 +2651,7 @@ function render() {
   els.goldText.textContent = state.gold;
   els.soundToggleButton.textContent = state.soundEnabled ? "Ses Açık" : "Ses Kapalı";
   els.pointsText.textContent = "Altınla geliştir";
-  const effectText = state.activeEffects.length > 0 ? ` - ${state.activeEffects.length} iksir aktif` : "";
+  const effectText = state.activeEffects.length > 0 ? ` - ${state.activeEffects.length} süreli etki aktif` : "";
   els.shopHint.textContent = `${Math.round(getHeroDamage())} hasar - ${getHeroAttackSpeed().toFixed(2)}/sn${effectText}`;
   renderStatusPanel();
   renderPanels();
